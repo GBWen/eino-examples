@@ -31,8 +31,9 @@ func main() {
 
 	// 创建llm
 	log.Printf("===create llm===\n")
-	cm := createOpenAIChatModel(ctx)
+	// cm := createOpenAIChatModel(ctx)
 	// cm := createOllamaChatModel(ctx)
+	cm := createArkChatModel(ctx)
 	log.Printf("create llm success\n\n")
 
 	log.Printf("===llm generate===\n")
