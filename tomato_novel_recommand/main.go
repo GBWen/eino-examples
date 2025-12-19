@@ -31,7 +31,9 @@ func main() {
 	// create LLM
 	log.Printf("=== 正在创建 Ark Chat 模型 ===\n")
 	cm := createArkChatModel(ctx)
-	log.Printf("模型创建成功\n\n")
+	// 绑定 NovelSearch Tool，使模型具备调用小说搜索能力
+	cm, _ = bindNovelSearchTool(ctx, cm)
+	log.Printf("模型创建成功，并已绑定 NovelSearch Tool\n\n")
 
 	reader := bufio.NewReader(os.Stdin)
 	var history []*schema.Message
