@@ -1,14 +1,4 @@
-/*
- * Tomato novel recommendation demo - NovelSearch Tool & binding helpers.
- *
- * 本文件演示如何把"番茄小说搜索"封装成 Eino Tool，
- * 让 Ark ChatModel 可以在 ReAct / ToolCall 场景下自动调用搜索能力。
- *
- * 参考了 adk/intro/chatmodel 中的 booksearch.go 实现方式，
- * 使用 utils.InferTool 简化 Tool 创建，通过结构体标签定义参数。
- */
-
-package main
+package tools
 
 import (
 	"context"
@@ -16,7 +6,7 @@ import (
 	"log"
 
 	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/components/tool"
+	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 )
@@ -43,19 +33,24 @@ type NovelSearchOutput struct {
 	Novels []*Novel `json:"novels"`
 }
 
+// NovelSearchParam 用于内部 API 调用的参数结构（保持向后兼容）。
+type NovelSearchParam struct {
+	Keyword string
+	Genre   string
+	TopN    int
+}
+
 // NewNovelSearchTool 创建一个 NovelSearch Tool 实例。
 // 使用 utils.InferTool 简化 Tool 创建，自动从函数签名和结构体标签推断 Tool 元信息。
-func NewNovelSearchTool() tool.InvokableTool {
+func NewNovelSearchTool() einotool.InvokableTool {
 	novelSearchTool, err := utils.InferTool(
 		"novel_search",
 		"根据用户给定的关键词或类型，从番茄小说中检索合适的小说列表",
 		func(ctx context.Context, input *NovelSearchInput) (output *NovelSearchOutput, err error) {
-			// 设置默认值
 			if input.TopN == 0 {
 				input.TopN = 5
 			}
 
-			// 调用实际的番茄小说后端（此处使用 mock，方便本仓库直接运行）
 			novels, err := callTomatoAPI(ctx, NovelSearchParam{
 				Keyword: input.Keyword,
 				Genre:   input.Genre,
@@ -74,17 +69,25 @@ func NewNovelSearchTool() tool.InvokableTool {
 	return novelSearchTool
 }
 
-// NovelSearchParam 用于内部 API 调用的参数结构（保持向后兼容）。
-type NovelSearchParam struct {
-	Keyword string
-	Genre   string
-	TopN    int
+// BindNovelSearchTool 将 NovelSearch Tool 绑定到 Ark ChatModel 上，返回带 Tool 能力的新模型实例。
+func BindNovelSearchTool(ctx context.Context, cm model.ToolCallingChatModel) (model.ToolCallingChatModel, einotool.BaseTool) {
+	novelTool := NewNovelSearchTool()
+
+	info, err := novelTool.Info(ctx)
+	if err != nil {
+		log.Fatalf("get novel tool info failed: %v", err)
+	}
+
+	newCM, err := cm.WithTools([]*schema.ToolInfo{info})
+	if err != nil {
+		log.Fatalf("bind tools failed: %v", err)
+	}
+	return newCM, novelTool
 }
 
 // callTomatoAPI 是对番茄小说检索服务的封装。
 // 实际接入时请替换为真实 HTTP / RPC 调用，这里仅做演示。
 func callTomatoAPI(_ context.Context, p NovelSearchParam) ([]*Novel, error) {
-	// Demo：返回一些 mock 数据，字段语义清晰便于大模型理解。
 	mock := []*Novel{
 		{
 			Title:       "重生成顶级爽文女主",
@@ -105,31 +108,4 @@ func callTomatoAPI(_ context.Context, p NovelSearchParam) ([]*Novel, error) {
 		return mock[:p.TopN], nil
 	}
 	return mock, nil
-}
-
-// coalesce 返回第一个非空字符串。
-func coalesce(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-// bindNovelSearchTool 将 NovelSearch Tool 绑定到 Ark ChatModel 上，
-// 返回带 Tool 能力的新模型实例和 Tool 本身，方便在 Graph / Agent 中继续使用。
-func bindNovelSearchTool(ctx context.Context, cm model.ToolCallingChatModel) (model.ToolCallingChatModel, tool.BaseTool) {
-	novelTool := NewNovelSearchTool()
-
-	info, err := novelTool.Info(ctx)
-	if err != nil {
-		log.Fatalf("get novel tool info failed: %v", err)
-	}
-
-	newCM, err := cm.WithTools([]*schema.ToolInfo{info})
-	if err != nil {
-		log.Fatalf("bind tools failed: %v", err)
-	}
-	return newCM, novelTool
 }

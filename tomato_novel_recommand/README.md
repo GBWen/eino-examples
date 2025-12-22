@@ -4,12 +4,11 @@
 
 ### 目录结构
 
-- `main.go`：交互式 CLI 入口，读取用户输入的阅读偏好，循环推荐小说
-- `ark.go`：Ark Chat 模型初始化（`createArkChatModel`）
-- `template.go`：番茄小说推荐的 `PromptTemplate`，包含系统提示 + 历史对话 + 用户偏好
-- `generate.go`：封装一次性和流式生成的辅助函数
-- `stream.go`：示例用的流式输出打印工具
-- `novel_tool.go`：**NovelSearch Tool 实现 + 绑定 Ark ChatModel 的辅助函数**
+- `main.go`：交互式 CLI 入口
+- `flow/`：流程底座，Ark ChatModel 初始化、生成/流式封装
+- `workflow/`：PromptTemplate 与消息构造
+- `tool/`：NovelSearch Tool 封装与绑定
+- `graph/`：Agent Graph/循环模板（含 CLI 循环示例）
 
 ### 0. 前置要求
 
@@ -81,6 +80,9 @@ cm, novelTool := bindNovelSearchTool(ctx, cm)
 
 3. **扩展为 Agent / Flow**
    - 如果你希望让模型自动决定「是否搜索」「搜索几次」「如何综合结果」，可以基于 `bindNovelSearchTool` 输出的模型，构建 ReAct Agent 或 Graph（参考仓库中的 `compose/graph/tool_call_agent` 等示例）。
+
+
+
 
 
 

@@ -11,16 +11,30 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"fmt"
-	"io"
 	"log"
-	"os"
-	"strings"
 
-	"github.com/cloudwego/eino/schema"
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/flow"
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/graph"
+	tools "github.com/cloudwego/eino-examples/tomato_novel_recommand/tool"
+	einotool "github.com/cloudwego/eino/components/tool"
 )
+
+// newDemoEmbedFn 为演示提供一个简单的占位向量化函数。
+// 真正接入时请替换为你自己的 Embedding 服务（如 Ark Embedding）。
+func newDemoEmbedFn() tools.EmbedFunc {
+	// 默认返回一个固定维度的伪向量（适合 Demo / 空跑）。
+	// 真实场景请用模型输出的向量且与 Qdrant collection 的维度匹配。
+	const dim = 8
+	return func(_ context.Context, text string) ([]float32, error) {
+		vec := make([]float32, dim)
+		// 简单哈希，把字符转成数值，便于演示（非真实 embedding）。
+		for i, r := range []rune(text) {
+			vec[i%dim] += float32(r%113) / 100.0
+		}
+		return vec, nil
+	}
+}
 
 func main() {
 	ctx := context.Background()
@@ -28,64 +42,20 @@ func main() {
 	log.Printf("=== 番茄小说推荐 Demo ===")
 	log.Printf("提示：请先在环境变量中设置 ARK_API_KEY\n")
 
-	// create LLM
 	log.Printf("=== 正在创建 Ark Chat 模型 ===\n")
-	cm := createArkChatModel(ctx)
-	// 绑定 NovelSearch Tool，使模型具备调用小说搜索能力
-	cm, _ = bindNovelSearchTool(ctx, cm)
-	log.Printf("模型创建成功，并已绑定 NovelSearch Tool\n\n")
+	cm := flow.CreateArkChatModel(ctx)
 
-	reader := bufio.NewReader(os.Stdin)
-	var history []*schema.Message
+	// 关键词检索 Tool 作为 fallback（不强制绑定给模型）
+	keywordTool := tools.NewNovelSearchTool()
 
-	for {
-		fmt.Print("请输入你当前想看的小说类型 / 心情 / 偏好（输入 exit 退出）：")
-		text, err := reader.ReadString('\n')
-		if err != nil {
-			log.Fatalf("read input failed: %v", err)
-		}
-		text = strings.TrimSpace(text)
-		if text == "" {
-			continue
-		}
-		if strings.EqualFold(text, "exit") {
-			fmt.Println("再见，期待下次帮你找书～")
-			return
-		}
-
-		// build messages based on current preference and chat history
-		messages := createMessagesFromTemplate(text, history)
-
-		// streaming generation
-		log.Printf("\n=== LLM recommendation result (streaming) ===\n")
-		sr := stream(ctx, cm, messages)
-
-		full := &schema.Message{
-			Role: "assistant", // ensure role is valid for next round
-		}
-
-		for {
-			msg, err := sr.Recv()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				log.Fatalf("stream recv failed: %v", err)
-			}
-			if msg == nil {
-				continue
-			}
-			if msg.Content != "" {
-				fmt.Print(msg.Content)
-				full.Content += msg.Content
-			}
-		}
-		fmt.Println()
-
-		// update history: user messages + assistant reply
-		history = append(history, messages...)
-		history = append(history, full)
-
-		fmt.Println("\n----------------------")
+	// 可选：绑定向量检索 Tool（需要提供 embedFn 并确保 Qdrant 可用）
+	var vecTool einotool.InvokableTool
+	if embedFn := newDemoEmbedFn(); embedFn != nil {
+		cm, vecTool = tools.BindNovelVectorSearchTool(ctx, cm, embedFn)
+		log.Printf("已绑定 NovelVectorSearch Tool（Qdrant）\n\n")
+	} else {
+		log.Printf("未绑定 NovelVectorSearch Tool：embedFn 未配置\n\n")
 	}
+
+	graph.RunInteractiveLoop(ctx, cm, vecTool, keywordTool)
 }

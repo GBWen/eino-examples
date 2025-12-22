@@ -1,8 +1,4 @@
-/*
- * Tomato novel recommendation demo - Ark chat model initialization.
- */
-
-package main
+package flow
 
 import (
 	"context"
@@ -13,15 +9,14 @@ import (
 	"github.com/cloudwego/eino/components/model"
 )
 
-// createArkChatModel creates an Ark chat model.
-func createArkChatModel(ctx context.Context) model.ToolCallingChatModel {
+// CreateArkChatModel creates an Ark chat model with env config.
+func CreateArkChatModel(ctx context.Context) model.ToolCallingChatModel {
 	apiKey := os.Getenv("ARK_API_KEY")
 	if apiKey == "" {
 		log.Fatalf("ARK_API_KEY is not set")
 	}
 
 	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
-		// use default public Ark inference endpoint and region, change if needed
 		BaseURL: "https://ark.cn-beijing.volces.com/api/v3",
 		Region:  "cn-beijing",
 		APIKey:  apiKey,
@@ -32,5 +27,3 @@ func createArkChatModel(ctx context.Context) model.ToolCallingChatModel {
 	}
 	return chatModel
 }
-
-
