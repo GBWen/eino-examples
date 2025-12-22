@@ -83,3 +83,5 @@ cm, novelTool := bindNovelSearchTool(ctx, cm)
    - 如果你希望让模型自动决定「是否搜索」「搜索几次」「如何综合结果」，可以基于 `bindNovelSearchTool` 输出的模型，构建 ReAct Agent 或 Graph（参考仓库中的 `compose/graph/tool_call_agent` 等示例）。
 
 
+
+

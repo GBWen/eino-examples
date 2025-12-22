@@ -1,20 +1,23 @@
 /*
  * Tomato novel recommendation demo - NovelSearch Tool & binding helpers.
  *
- * 本文件演示如何把“番茄小说搜索”封装成 Eino Tool，
+ * 本文件演示如何把"番茄小说搜索"封装成 Eino Tool，
  * 让 Ark ChatModel 可以在 ReAct / ToolCall 场景下自动调用搜索能力。
+ *
+ * 参考了 adk/intro/chatmodel 中的 booksearch.go 实现方式，
+ * 使用 utils.InferTool 简化 Tool 创建，通过结构体标签定义参数。
  */
 
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -27,70 +30,55 @@ type Novel struct {
 	Link        string `json:"link"`
 }
 
-// NovelSearchParam 是 NovelSearch Tool 接收的参数结构。
-type NovelSearchParam struct {
-	Keyword string `json:"keyword"` // 关键字：如“重生、甜宠、系统”
-	Genre   string `json:"genre"`   // 类型：如“玄幻、都市、言情”
-	TopN    int    `json:"top_n"`   // 返回前 N 本，默认 5
+// NovelSearchInput 是 NovelSearch Tool 接收的参数结构。
+// 使用 jsonschema_description 标签定义参数描述，enum 标签定义可选值。
+type NovelSearchInput struct {
+	Keyword string `json:"keyword" jsonschema_description:"搜索关键词，比如：重生、甜宠、复仇、系统等"`
+	Genre   string `json:"genre" jsonschema_description:"小说类型/题材，比如：玄幻、都市、言情、悬疑等" enum:"玄幻,enum:都市,enum:言情,enum:悬疑,enum:科幻,enum:历史,enum:军事"`
+	TopN    int    `json:"top_n" jsonschema_description:"返回前 N 本命中的小说，默认 5 本"`
 }
 
-// NovelSearchTool 将“番茄小说搜索能力”封装为一个 InvokableTool。
-type NovelSearchTool struct{}
+// NovelSearchOutput 是 NovelSearch Tool 的返回结果结构。
+type NovelSearchOutput struct {
+	Novels []*Novel `json:"novels"`
+}
 
 // NewNovelSearchTool 创建一个 NovelSearch Tool 实例。
-func NewNovelSearchTool() *NovelSearchTool {
-	return &NovelSearchTool{}
+// 使用 utils.InferTool 简化 Tool 创建，自动从函数签名和结构体标签推断 Tool 元信息。
+func NewNovelSearchTool() tool.InvokableTool {
+	novelSearchTool, err := utils.InferTool(
+		"novel_search",
+		"根据用户给定的关键词或类型，从番茄小说中检索合适的小说列表",
+		func(ctx context.Context, input *NovelSearchInput) (output *NovelSearchOutput, err error) {
+			// 设置默认值
+			if input.TopN == 0 {
+				input.TopN = 5
+			}
+
+			// 调用实际的番茄小说后端（此处使用 mock，方便本仓库直接运行）
+			novels, err := callTomatoAPI(ctx, NovelSearchParam{
+				Keyword: input.Keyword,
+				Genre:   input.Genre,
+				TopN:    input.TopN,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("call tomato api failed: %w", err)
+			}
+
+			return &NovelSearchOutput{Novels: novels}, nil
+		},
+	)
+	if err != nil {
+		log.Fatalf("failed to create novel search tool: %v", err)
+	}
+	return novelSearchTool
 }
 
-// Info 返回 Tool 的元信息，用于暴露给大模型做 tool calling。
-func (t *NovelSearchTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: "novel_search",
-		Desc: "根据用户给定的关键词或类型，从番茄小说中检索合适的小说列表",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"keyword": {
-				Type:     "string",
-				Desc:     "搜索关键词，比如：重生、甜宠、复仇、系统 等",
-				Required: false,
-			},
-			"genre": {
-				Type:     "string",
-				Desc:     "小说类型/题材，比如：玄幻、都市、言情、悬疑等",
-				Required: false,
-			},
-			"top_n": {
-				Type: "number",
-				Desc: "返回前 N 本命中的小说，默认 5 本",
-			},
-		}),
-	}, nil
-}
-
-// InvokableRun 是 Tool 的真正执行逻辑。
-// - argumentsInJSON：来自大模型 Tool Call 的 JSON 字符串参数
-// - 返回值：给大模型的字符串，一般设计成结构化 JSON，字段含义要清晰
-func (t *NovelSearchTool) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
-	// 1. 解析参数
-	var p NovelSearchParam
-	if err := json.Unmarshal([]byte(argumentsInJSON), &p); err != nil {
-		return "", fmt.Errorf("unmarshal novel search param failed: %w", err)
-	}
-	if p.TopN == 0 {
-		p.TopN = 5
-	}
-
-	// 2. 调用实际的番茄小说后端（此处使用 mock，方便本仓库直接运行）
-	novels, err := callTomatoAPI(ctx, p)
-	if err != nil {
-		return "", fmt.Errorf("call tomato api failed: %w", err)
-	}
-
-	// 3. 序列化为 JSON 字符串返回给大模型
-	out, err := json.Marshal(novels)
-	if err != nil {
-		return "", fmt.Errorf("marshal novels failed: %w", err)
-	}
-	return string(out), nil
+// NovelSearchParam 用于内部 API 调用的参数结构（保持向后兼容）。
+type NovelSearchParam struct {
+	Keyword string
+	Genre   string
+	TopN    int
 }
 
 // callTomatoAPI 是对番茄小说检索服务的封装。
