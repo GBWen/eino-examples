@@ -16,7 +16,9 @@ type feedbackRecord struct {
 	Reply      string         `json:"reply,omitempty"`
 }
 
-// RecordFeedback 写入简单的日志文件，后续可替换为 DB/向量库更新。
+// RecordFeedback appends a simple JSON line to a local log file.
+// Later this can be replaced by writing to a DB or updating a vector store.
+// TODO: replace file-based logging with a persistent DB or vector-store update pipeline.
 func RecordFeedback(path string, input string, candidates []*tools.Novel, reply string) {
 	if path == "" {
 		path = "/tmp/novel_feedback.log"

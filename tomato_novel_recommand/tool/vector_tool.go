@@ -16,10 +16,11 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// EmbedFunc 抽象化的文本向量化函数，调用方可接入任意 Embedding 服务。
+// EmbedFunc abstracts a text-embedding function.
+// Caller can plug in any embedding service.
 type EmbedFunc func(ctx context.Context, text string) ([]float32, error)
 
-// qdrantClient 负责调用 Qdrant 的 search 接口。
+// qdrantClient wraps Qdrant search API.
 type qdrantClient struct {
 	baseURL    string
 	collection string
@@ -29,6 +30,7 @@ type qdrantClient struct {
 func newQdrantClientFromEnv() *qdrantClient {
 	base := os.Getenv("QDRANT_URL")
 	if base == "" {
+		// TODO: make Qdrant endpoint configurable via config file/flags instead of hardcoding localhost.
 		base = "http://localhost:6333"
 	}
 	coll := os.Getenv("QDRANT_COLLECTION")
@@ -42,14 +44,14 @@ func newQdrantClientFromEnv() *qdrantClient {
 	}
 }
 
-// qdrantSearchRequest 封装 Qdrant search 请求。
+// qdrantSearchRequest is a minimal search request payload for Qdrant.
 type qdrantSearchRequest struct {
 	Vector []float32   `json:"vector"`
 	Limit  int         `json:"limit"`
 	Filter interface{} `json:"filter,omitempty"`
 }
 
-// qdrantSearchResponse 简化的响应结构。
+// qdrantSearchResponse is a simplified search response from Qdrant.
 type qdrantSearchResponse struct {
 	Result []struct {
 		ID      any                    `json:"id"`
@@ -122,26 +124,27 @@ func strFromPayload(p map[string]interface{}, key string) string {
 	return ""
 }
 
-// NovelVectorSearchInput 向量检索 Tool 的入参，兼容 keyword/genre/top_n。
+// NovelVectorSearchInput is the input for the vector-search tool, compatible with keyword/genre/top_n.
 type NovelVectorSearchInput struct {
-	Keyword string `json:"keyword" jsonschema_description:"搜索关键词，如 甜宠/复仇/系统 等"`
-	Genre   string `json:"genre" jsonschema_description:"可选的题材过滤，如 玄幻/都市/言情 等"`
-	TopN    int    `json:"top_n" jsonschema_description:"返回前 N 本，默认 5 本"`
-	// 兼容字段：如果调用方仍传 query，将优先使用 keyword 非空，否则 fallback 到 query。
-	Query string `json:"query,omitempty" jsonschema_description:"兼容字段，同 keyword"`
+	Keyword string `json:"keyword" jsonschema_description:"search keyword, e.g. sweet-pet / revenge / system"`
+	Genre   string `json:"genre" jsonschema_description:"optional genre filter, e.g. fantasy / urban / romance"`
+	TopN    int    `json:"top_n" jsonschema_description:"return top N results, default 5"`
+	// Compatible field: if caller still uses 'query', we fallback to it when keyword is empty.
+	Query string `json:"query,omitempty" jsonschema_description:"compatible field, same meaning as keyword"`
 }
 
-// NewNovelVectorSearchTool 使用 Qdrant + EmbedFunc 的向量检索 Tool。
-// embedFn：调用方提供的向量化函数；如果为空则返回错误提示。
+// NewNovelVectorSearchTool builds a Qdrant-based vector-search tool using the given EmbedFunc.
+// embedFn must be provided by the caller; if nil, an error is returned.
 func NewNovelVectorSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
+	// TODO: inject qdrantClient and EmbedFunc via DI/config to make this tool easier to test and configure.
 	qc := newQdrantClientFromEnv()
 
 	toolImpl, err := utils.InferTool(
 		"novel_vector_search",
-		"基于向量检索的番茄小说搜索（Qdrant），支持 keyword/genre/top_n",
+		"Vector-based novel search using Qdrant, supports keyword/genre/top_n.",
 		func(ctx context.Context, input *NovelVectorSearchInput) (output *NovelSearchOutput, err error) {
 			if embedFn == nil {
-				return nil, fmt.Errorf("embedFn is nil: 请在创建 Tool 时传入向量化实现")
+				return nil, fmt.Errorf("embedFn is nil: please provide an embedding implementation when creating the tool")
 			}
 			topN := input.TopN
 			if topN == 0 {
@@ -157,7 +160,7 @@ func NewNovelVectorSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 			}
 			novels, err := qc.search(ctx, vec, topN, input.Genre)
 			if err != nil {
-				// fallback: 返回空列表，让上层可决定是否继续走关键词检索
+				// Fallback: return empty list and let upper layer decide whether to fall back to keyword search.
 				return &NovelSearchOutput{Novels: []*Novel{}}, fmt.Errorf("qdrant search failed: %w", err)
 			}
 			return &NovelSearchOutput{Novels: novels}, nil
@@ -169,7 +172,7 @@ func NewNovelVectorSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 	return toolImpl
 }
 
-// BindNovelVectorSearchTool 将向量检索 Tool 绑定到模型。
+// BindNovelVectorSearchTool binds the vector-search tool to the chat model and returns the new model plus the tool.
 func BindNovelVectorSearchTool(ctx context.Context, cm model.ToolCallingChatModel, embedFn EmbedFunc) (model.ToolCallingChatModel, einotool.InvokableTool) {
 	vectorTool := NewNovelVectorSearchTool(embedFn)
 

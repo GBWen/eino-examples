@@ -18,8 +18,8 @@ import (
 	"github.com/cloudwego/eino-examples/tomato_novel_recommand/workflow"
 )
 
-// RunInteractiveLoop 演示型循环：读取用户偏好，构建消息，流式输出，并维护对话历史。
-// 这是一个简单的 Agent Graph 模板：输入 -> 模板 -> (可嵌入 Tool) -> LLM -> 输出 -> 累积历史。
+// RunInteractiveLoop is a demo agent loop:
+// read user preference -> build messages -> (optionally call tools) -> LLM stream -> maintain history.
 func RunInteractiveLoop(ctx context.Context, llm model.ToolCallingChatModel, vectorTool einotool.InvokableTool, keywordTool einotool.InvokableTool) {
 	reader := bufio.NewReader(os.Stdin)
 	var history []*schema.Message
@@ -39,13 +39,13 @@ func RunInteractiveLoop(ctx context.Context, llm model.ToolCallingChatModel, vec
 			return
 		}
 
-		// Step 1: 澄清关键信息
+		// Step 1: clarify missing key information if the query is too short.
 		preference := ensurePreference(ctx, text, reader)
 
-		// Step 2: 调用向量检索 Tool 获取候选
+		// Step 2: call vector-search / keyword-search tools to get candidate novels.
 		candidates := retrieveCandidates(ctx, vectorTool, keywordTool, preference)
 
-		// Step 3: 组装 prompt（包含候选）并流式生成
+		// Step 3: build prompt with candidates and stream the final recommendation.
 		messages, err := workflow.CreateMessagesFromTemplate(preference, candidates, history)
 		if err != nil {
 			log.Fatalf("format template failed: %v", err)
@@ -55,18 +55,19 @@ func RunInteractiveLoop(ctx context.Context, llm model.ToolCallingChatModel, vec
 		sr := flow.Stream(ctx, llm, messages)
 		full := flow.ConsumeStream(sr, flow.StdoutWriter)
 
-		// update history: user messages + assistant reply
+		// Update history: user messages + assistant reply.
 		history = append(history, messages...)
 		history = append(history, full)
 
-		// Step 4: 反馈写回（可替换为 DB/向量库）
+		// Step 4: write feedback for later offline use (e.g. DB / vector store update).
+		// TODO: consume feedback logs to update user preference vectors or training data.
 		workflow.RecordFeedback("", preference, candidates, full.Content)
 
 		fmt.Println("\n----------------------")
 	}
 }
 
-// ensurePreference 使用澄清 Tool 补齐用户偏好。
+// ensurePreference uses the clarify tool to complete user preference if it's too vague.
 func ensurePreference(ctx context.Context, pref string, reader *bufio.Reader) string {
 	if len([]rune(pref)) >= 4 {
 		return pref
@@ -91,14 +92,14 @@ func ensurePreference(ctx context.Context, pref string, reader *bufio.Reader) st
 	return answer
 }
 
-// retrieveCandidates 调用向量检索 Tool，失败或为空时回退到关键词检索 Tool。
+// retrieveCandidates calls the vector-search tool, and falls back to keyword-search tool on error or empty result.
 func retrieveCandidates(ctx context.Context, vectorTool einotool.InvokableTool, keywordTool einotool.InvokableTool, pref string) []*tools.Novel {
 	args, _ := json.Marshal(map[string]any{
 		"keyword": pref,
 		"top_n":   5,
 	})
 
-	// 先试向量检索
+	// First try vector search.
 	if vectorTool != nil {
 		if res := invokeTool(ctx, vectorTool, args); len(res) > 0 {
 			return res
@@ -106,7 +107,7 @@ func retrieveCandidates(ctx context.Context, vectorTool einotool.InvokableTool, 
 		log.Printf("vector search fallback to keyword search")
 	}
 
-	// 回退关键词检索
+	// Fallback to keyword search.
 	if keywordTool != nil {
 		if res := invokeTool(ctx, keywordTool, args); len(res) > 0 {
 			return res

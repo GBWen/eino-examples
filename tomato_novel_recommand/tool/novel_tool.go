@@ -11,7 +11,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// Novel 表示单本小说的关键信息。
+// Novel represents the key information of a single novel.
 type Novel struct {
 	Title       string `json:"title"`
 	Author      string `json:"author"`
@@ -20,32 +20,32 @@ type Novel struct {
 	Link        string `json:"link"`
 }
 
-// NovelSearchInput 是 NovelSearch Tool 接收的参数结构。
-// 使用 jsonschema_description 标签定义参数描述，enum 标签定义可选值。
+// NovelSearchInput is the input schema of the NovelSearch tool.
+// It uses jsonschema_description and enum tags for better tool documentation.
 type NovelSearchInput struct {
-	Keyword string `json:"keyword" jsonschema_description:"搜索关键词，比如：重生、甜宠、复仇、系统等"`
-	Genre   string `json:"genre" jsonschema_description:"小说类型/题材，比如：玄幻、都市、言情、悬疑等" enum:"玄幻,enum:都市,enum:言情,enum:悬疑,enum:科幻,enum:历史,enum:军事"`
-	TopN    int    `json:"top_n" jsonschema_description:"返回前 N 本命中的小说，默认 5 本"`
+	Keyword string `json:"keyword" jsonschema_description:"search keyword, e.g. rebirth / sweet-pet / revenge / system"`
+	Genre   string `json:"genre" jsonschema_description:"novel genre, e.g. fantasy / urban / romance / mystery" enum:"fantasy,enum:urban,enum:romance,enum:mystery,enum:sci-fi,enum:history,enum:military"`
+	TopN    int    `json:"top_n" jsonschema_description:"return top N results, default 5"`
 }
 
-// NovelSearchOutput 是 NovelSearch Tool 的返回结果结构。
+// NovelSearchOutput is the output schema of the NovelSearch tool.
 type NovelSearchOutput struct {
 	Novels []*Novel `json:"novels"`
 }
 
-// NovelSearchParam 用于内部 API 调用的参数结构（保持向后兼容）。
+// NovelSearchParam is the internal parameter struct for API calls (kept for backwards compatibility).
 type NovelSearchParam struct {
 	Keyword string
 	Genre   string
 	TopN    int
 }
 
-// NewNovelSearchTool 创建一个 NovelSearch Tool 实例。
-// 使用 utils.InferTool 简化 Tool 创建，自动从函数签名和结构体标签推断 Tool 元信息。
+// NewNovelSearchTool creates a NovelSearch tool.
+// It uses utils.InferTool to infer tool metadata from function signature and struct tags.
 func NewNovelSearchTool() einotool.InvokableTool {
 	novelSearchTool, err := utils.InferTool(
 		"novel_search",
-		"根据用户给定的关键词或类型，从番茄小说中检索合适的小说列表",
+		"Search tomato novels based on user-provided keyword or genre, and return suitable candidates.",
 		func(ctx context.Context, input *NovelSearchInput) (output *NovelSearchOutput, err error) {
 			if input.TopN == 0 {
 				input.TopN = 5
@@ -69,7 +69,7 @@ func NewNovelSearchTool() einotool.InvokableTool {
 	return novelSearchTool
 }
 
-// BindNovelSearchTool 将 NovelSearch Tool 绑定到 Ark ChatModel 上，返回带 Tool 能力的新模型实例。
+// BindNovelSearchTool binds the NovelSearch tool to an Ark ChatModel and returns the new model instance.
 func BindNovelSearchTool(ctx context.Context, cm model.ToolCallingChatModel) (model.ToolCallingChatModel, einotool.BaseTool) {
 	novelTool := NewNovelSearchTool()
 
@@ -85,8 +85,9 @@ func BindNovelSearchTool(ctx context.Context, cm model.ToolCallingChatModel) (mo
 	return newCM, novelTool
 }
 
-// callTomatoAPI 是对番茄小说检索服务的封装。
-// 实际接入时请替换为真实 HTTP / RPC 调用，这里仅做演示。
+// callTomatoAPI wraps the tomato novel search backend.
+// In real usage, replace this with real HTTP / RPC calls; this is only a demo mock.
+// TODO: plug in real tomato novel search API (HTTP/RPC) and remove the hard-coded mock data below.
 func callTomatoAPI(_ context.Context, p NovelSearchParam) ([]*Novel, error) {
 	mock := []*Novel{
 		{

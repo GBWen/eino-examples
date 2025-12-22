@@ -20,15 +20,16 @@ import (
 	einotool "github.com/cloudwego/eino/components/tool"
 )
 
-// newDemoEmbedFn 为演示提供一个简单的占位向量化函数。
-// 真正接入时请替换为你自己的 Embedding 服务（如 Ark Embedding）。
+// newDemoEmbedFn provides a simple fake embedding function for demo purposes.
+// In real scenarios, replace this with your own embedding service (e.g. Ark Embedding).
 func newDemoEmbedFn() tools.EmbedFunc {
-	// 默认返回一个固定维度的伪向量（适合 Demo / 空跑）。
-	// 真实场景请用模型输出的向量且与 Qdrant collection 的维度匹配。
+	// Returns a fixed-dimension pseudo vector (good enough for local demo).
+	// In production, use real model outputs and ensure the dim matches Qdrant collection.
+	// TODO: replace this demo embedding with a real embedding model (e.g. Ark Embedding API).
 	const dim = 8
 	return func(_ context.Context, text string) ([]float32, error) {
 		vec := make([]float32, dim)
-		// 简单哈希，把字符转成数值，便于演示（非真实 embedding）。
+		// Simple hash-based projection to float values, only for demo (not a real embedding).
 		for i, r := range []rune(text) {
 			vec[i%dim] += float32(r%113) / 100.0
 		}
@@ -45,16 +46,16 @@ func main() {
 	log.Printf("=== 正在创建 Ark Chat 模型 ===\n")
 	cm := flow.CreateArkChatModel(ctx)
 
-	// 关键词检索 Tool 作为 fallback（不强制绑定给模型）
+	// Keyword-search tool as a fallback (not necessarily bound to the model).
 	keywordTool := tools.NewNovelSearchTool()
 
-	// 可选：绑定向量检索 Tool（需要提供 embedFn 并确保 Qdrant 可用）
+	// Optionally bind vector-search tool (requires embedFn and a running Qdrant).
 	var vecTool einotool.InvokableTool
 	if embedFn := newDemoEmbedFn(); embedFn != nil {
 		cm, vecTool = tools.BindNovelVectorSearchTool(ctx, cm, embedFn)
-		log.Printf("已绑定 NovelVectorSearch Tool（Qdrant）\n\n")
+		log.Printf("NovelVectorSearch tool (Qdrant) is bound\n\n")
 	} else {
-		log.Printf("未绑定 NovelVectorSearch Tool：embedFn 未配置\n\n")
+		log.Printf("NovelVectorSearch tool is NOT bound: embedFn is nil\n\n")
 	}
 
 	graph.RunInteractiveLoop(ctx, cm, vecTool, keywordTool)

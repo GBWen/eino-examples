@@ -12,7 +12,7 @@ type clarifyOptions struct {
 	UserResponse *string
 }
 
-// WithUserResponse 在第二次调用时提供用户回答。
+// WithUserResponse passes the user's response when calling the tool the second time.
 func WithUserResponse(resp string) einotool.Option {
 	return einotool.WrapImplSpecificOptFn(func(o *clarifyOptions) {
 		o.UserResponse = &resp
@@ -20,21 +20,23 @@ func WithUserResponse(resp string) einotool.Option {
 }
 
 type ClarifyInput struct {
-	Question string `json:"question" jsonschema_description:"想问用户以补足关键信息的问题"`
+	Question string `json:"question" jsonschema_description:"question you want to ask the user to fill in missing key information"`
 }
 
-// NewClarifyTool 生成澄清工具：若未提供用户回答，则返回问题文本；提供后直接返回回答。
+// NewClarifyTool creates a clarify tool:
+// - first call (no user response): returns the question to ask the user
+// - second call (with user response): returns the user's answer.
 func NewClarifyTool() einotool.InvokableTool {
 	t, err := utils.InferOptionableTool(
 		"clarify_missing_info",
-		"当用户提供的信息不完整时，提出澄清问题并等待用户回答。",
+		"When the user's request is incomplete, use this tool to ask a clarification question and wait for the user's answer.",
 		func(ctx context.Context, input *ClarifyInput, opts ...einotool.Option) (output string, err error) {
 			o := einotool.GetImplSpecificOptions[clarifyOptions](nil, opts...)
 			if o.UserResponse == nil {
-				// 第一次调用：返回要询问的问题
+				// First call: return the question to ask the user.
 				return input.Question, nil
 			}
-			// 第二次调用：返回用户回答内容
+			// Second call: return the user's answer content.
 			return *o.UserResponse, nil
 		},
 	)
