@@ -54,7 +54,7 @@ func main() {
 		tools.NewClarifyTool(),     // Clarification tool: ask user for more details when needed
 	}
 
-	// Optional: add vector search tool for large-scale book library (millions of books)
+	// TODO: add vector search tool for large-scale book library (millions of books)
 	// Uncomment the following to enable vector search:
 	/*
 		if embedFn := newDemoEmbedFn(); embedFn != nil {
@@ -65,7 +65,7 @@ func main() {
 	*/
 
 	// Bind all tools to the model
-	// The model will automatically decide which tool to use
+	// It will automatically decide which tool to use
 	var toolInfos []*schema.ToolInfo
 	for _, t := range toolsList {
 		info, err := t.Info(ctx)
