@@ -49,7 +49,7 @@ func GetSystemPrompt(ctx context.Context, toolsList []tool.BaseTool) string {
 	if hasKeywordSearch || hasVectorSearch {
 		workflowSteps = append(workflowSteps, "2) 在用户需求明确后，调用搜索工具获取候选")
 	}
-	workflowSteps = append(workflowSteps, "3) 从候选中选择3-5本最匹配的，给出推荐理由")
+	workflowSteps = append(workflowSteps, "3) 从候选中选择3-5本最匹配的，给出推荐理由，并在每本书后面给出可点击的阅读链接（如果工具返回了 link 字段）")
 
 	if len(workflowSteps) > 0 {
 		basePrompt += "推荐流程：" + strings.Join(workflowSteps, " ") + "。\n\n"
@@ -58,6 +58,7 @@ func GetSystemPrompt(ctx context.Context, toolsList []tool.BaseTool) string {
 	basePrompt += "**重要规则**：\n" +
 		"- 如果用户输入过于简单或模糊（少于10个字，或缺少具体偏好），必须先澄清，不要直接搜索\n" +
 		"- 只有在用户提供了明确的题材、风格、关键词等信息后，才调用搜索工具\n" +
+		"- 回答中推荐书目时，优先使用工具结果中的 title / author / category / description / link 字段，并明确写出“阅读链接：<URL>”\n" +
 		"- 回答时使用自然、口语化的中文"
 
 	return basePrompt
