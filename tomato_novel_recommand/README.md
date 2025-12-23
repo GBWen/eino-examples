@@ -21,8 +21,9 @@
 
 ### 目录结构
 
-- `main.go`：交互式 CLI 入口，初始化 ReAct Agent 和 Tools
-- `flow/`：流程底座，Ark ChatModel 初始化、生成/流式封装
+- `main.go`：交互式 CLI 入口，调用 `service` 装配并启动
+- `service/app.go`：业务装配（模型、Embedding、向量落库、工具绑定、交互循环）
+- `service/llm/`：Ark Chat 模型与 Embedding 封装
 - `service/workflow/`：反馈记录（可选，用于后续用户画像更新）
 - `service/tool/`：Tool 封装
   - `novel_tool.go`：关键词搜索 Tool（默认，且将结果落库到向量 DB）
