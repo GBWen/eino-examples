@@ -28,10 +28,15 @@ func New(baseURL, collection string) *Client {
 	}
 }
 
+// NewWithConfig builds Client from QdrantConfig.
+func NewWithConfig(cfg config.QdrantConfig) *Client {
+	return New(cfg.URL, cfg.Collection)
+}
+
 // NewFromEnv builds a Client using env/config defaults.
 func NewFromEnv() *Client {
 	cfg := config.LoadQdrantConfig()
-	return New(cfg.URL, cfg.Collection)
+	return NewWithConfig(cfg)
 }
 
 // Collection returns the configured collection name.

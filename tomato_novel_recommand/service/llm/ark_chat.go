@@ -10,9 +10,8 @@ import (
 	"github.com/cloudwego/eino-examples/tomato_novel_recommand/config"
 )
 
-// CreateArkChatModel creates an Ark chat model with env config.
-func CreateArkChatModel(ctx context.Context) model.ToolCallingChatModel {
-	cfg := config.LoadArkChatConfig()
+// CreateArkChatModel creates an Ark chat model with provided config.
+func CreateArkChatModel(ctx context.Context, cfg config.ArkChatConfig) model.ToolCallingChatModel {
 	if cfg.APIKey == "" {
 		log.Fatalf("ARK_API_KEY is not set")
 	}

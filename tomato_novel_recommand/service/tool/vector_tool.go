@@ -114,19 +114,16 @@ type NovelVectorSearchInput struct {
 	Query string `json:"query,omitempty" jsonschema_description:"compatible field, same meaning as keyword"`
 }
 
-// NewNovelVectorSearchTool builds a Qdrant-based vector-search tool using the given EmbedFunc.
-// embedFn must be provided by the caller; if nil, an error is returned.
-func NewNovelVectorSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
-	// TODO: inject qdrant client and EmbedFunc via DI/config to make this tool easier to test and configure.
-	qc := qdrant.NewFromEnv()
-
+// NewNovelVectorSearchTool builds a Qdrant-based vector-search tool using the given EmbedFunc and client.
+// embedFn and client must be provided by the caller; if nil, an error is returned.
+func NewNovelVectorSearchTool(embedFn EmbedFunc, client *qdrant.Client) einotool.InvokableTool {
 	toolImpl, err := utils.InferTool(
 		"novel_vector_search",
 		"Vector-based novel search using Qdrant, supports keyword/genre/top_n.",
 		func(ctx context.Context, input *NovelVectorSearchInput) (output *NovelSearchOutput, err error) {
 			log.Printf("[tool] invoke novel_vector_search, input=%+v", input)
-			if embedFn == nil {
-				return nil, fmt.Errorf("embedFn is nil: please provide an embedding implementation when creating the tool")
+			if embedFn == nil || client == nil {
+				return nil, fmt.Errorf("embedFn or client is nil: please provide embedding and qdrant client when creating the tool")
 			}
 			topN := input.TopN
 			if topN == 0 {
@@ -141,7 +138,7 @@ func NewNovelVectorSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 				log.Printf("[tool] novel_vector_search embed failed, err=%v", err)
 				return nil, fmt.Errorf("embed failed: %w", err)
 			}
-			novels, err := qdrantSearch(ctx, qc, vec, topN, input.Genre)
+			novels, err := qdrantSearch(ctx, client, vec, topN, input.Genre)
 			if err != nil {
 				// Fallback: return empty list and let upper layer decide whether to fall back to keyword search.
 				log.Printf("[tool] novel_vector_search qdrant search failed, err=%v", err)

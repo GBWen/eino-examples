@@ -20,14 +20,13 @@ type NovelHybridSearchInput struct {
 }
 
 // NewNovelHybridSearchTool runs keyword API search and vector search, then merges results.
-// It needs an embedding function for the vector part; if nil, creation will fail.
-func NewNovelHybridSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
-	if embedFn == nil {
-		log.Fatalf("embedFn is required for hybrid search")
+// It needs an embedding function and qdrant client; if nil, creation will fail.
+func NewNovelHybridSearchTool(embedFn EmbedFunc, client *qdrant.Client) einotool.InvokableTool {
+	if embedFn == nil || client == nil {
+		log.Fatalf("embedFn and client are required for hybrid search")
 	}
-	qc := qdrant.NewFromEnv()
 	// Reuse the same embed + qdrant client to persist fresh API results into vectors.
-	sink := qdrant.NewVectorSink(embedFn)
+	sink := qdrant.NewVectorSinkWithClient(embedFn, client)
 
 	toolImpl, err := einoutils.InferTool(
 		"novel_hybrid_search",
@@ -64,7 +63,7 @@ func NewNovelHybridSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 			var vecNovels []*model.Novel
 			if vec, err := embedFn(ctx, query); err != nil {
 				log.Printf("[tool] hybrid embed failed: %v", err)
-			} else if novels, err := qdrantSearch(ctx, qc, vec, topN, input.Genre); err != nil {
+			} else if novels, err := qdrantSearch(ctx, client, vec, topN, input.Genre); err != nil {
 				log.Printf("[tool] hybrid vector search failed: %v", err)
 			} else {
 				vecNovels = novels

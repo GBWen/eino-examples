@@ -12,10 +12,9 @@ import (
 	"github.com/cloudwego/eino-examples/tomato_novel_recommand/config"
 )
 
-// NewArkEmbedFuncFromEnv builds an EmbedFunc using Ark Embedding API.
+// NewArkEmbedFunc builds an EmbedFunc using Ark Embedding API.
 // Return type is compatible with tools.EmbedFunc (func(ctx, text) ([]float32, error)).
-func NewArkEmbedFuncFromEnv() (func(ctx context.Context, text string) ([]float32, error), error) {
-	cfg := config.LoadArkEmbedConfig()
+func NewArkEmbedFunc(cfg config.ArkEmbedConfig) (func(ctx context.Context, text string) ([]float32, error), error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("EMBED_API_KEY is required for Ark embedding")
 	}
@@ -70,4 +69,3 @@ func NewArkEmbedFuncFromEnv() (func(ctx context.Context, text string) ([]float32
 		return nil, fmt.Errorf("unexpected embedding response: %s", string(raw))
 	}, nil
 }
-

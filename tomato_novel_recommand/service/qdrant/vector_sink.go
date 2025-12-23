@@ -23,11 +23,17 @@ type VectorSink struct {
 // NewVectorSink builds a sink with the default client (env-configured).
 // Returns nil if embed is nil to preserve caller behavior.
 func NewVectorSink(embed EmbedFunc) *VectorSink {
-	if embed == nil {
+	return NewVectorSinkWithClient(embed, NewFromEnv())
+}
+
+// NewVectorSinkWithClient builds a sink with explicit client.
+// Returns nil if embed or client is nil to preserve caller behavior.
+func NewVectorSinkWithClient(embed EmbedFunc, client *Client) *VectorSink {
+	if embed == nil || client == nil {
 		return nil
 	}
 	return &VectorSink{
-		client: NewFromEnv(),
+		client: client,
 		embed:  embed,
 	}
 }
