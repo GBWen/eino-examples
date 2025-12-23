@@ -1,8 +1,15 @@
 package workflow
 
+import (
+	"context"
+	"strings"
+
+	"github.com/cloudwego/eino/components/tool"
+)
+
 // GetSystemPrompt returns the system prompt for the novel recommendation agent.
 // It dynamically generates the prompt based on available tools to avoid mentioning tools that aren't bound.
-funcgit GetSystemPrompt(ctx context.Context, toolsList []tool.BaseTool) string {
+func GetSystemPrompt(ctx context.Context, toolsList []tool.BaseTool) string {
 	basePrompt := "你是一名中文网络小说平台的资深编辑，擅长根据用户的阅读喜好推荐中文网文。\n\n" +
 		"如果你已经多次使用工具但仍无法显著提高推荐质量，应停止继续调用工具，基于当前已有的信息给出你能提供的最佳推荐结果。\n\n"
 
