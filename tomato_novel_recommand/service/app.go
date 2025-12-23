@@ -8,6 +8,7 @@ import (
 
 	"github.com/cloudwego/eino-examples/tomato_novel_recommand/service/graph"
 	"github.com/cloudwego/eino-examples/tomato_novel_recommand/service/llm"
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/service/qdrant"
 	tools "github.com/cloudwego/eino-examples/tomato_novel_recommand/service/tool"
 	einotool "github.com/cloudwego/eino/components/tool"
 )
@@ -28,7 +29,7 @@ func Run(ctx context.Context) {
 		log.Fatalf("Ark embedding is required: %v", arkErr)
 	}
 	log.Printf("Ark embedding enabled via EMBED_API_KEY")
-	vectorSink := tools.NewQdrantVectorSink(embedFn)
+	vectorSink := qdrant.NewVectorSink(embedFn)
 
 	// Prepare tools: keyword search (default) + clarify tool
 	toolsList := []einotool.BaseTool{
@@ -63,4 +64,3 @@ func Run(ctx context.Context) {
 
 	graph.RunInteractiveLoop(ctx, cm, toolsList)
 }
-

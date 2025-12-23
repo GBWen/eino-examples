@@ -6,20 +6,20 @@ import (
 	"os"
 	"time"
 
-	tools "github.com/cloudwego/eino-examples/tomato_novel_recommand/service/tool"
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/service/model"
 )
 
 type feedbackRecord struct {
 	Timestamp  time.Time      `json:"ts"`
 	Input      string         `json:"input"`
-	Candidates []*tools.Novel `json:"candidates,omitempty"`
+	Candidates []*model.Novel `json:"candidates,omitempty"`
 	Reply      string         `json:"reply,omitempty"`
 }
 
 // RecordFeedback appends a simple JSON line to a local log file.
 // Later this can be replaced by writing to a DB or updating a vector store.
 // TODO: replace file-based logging with a persistent DB or vector-store update pipeline.
-func RecordFeedback(path string, input string, candidates []*tools.Novel, reply string) {
+func RecordFeedback(path string, input string, candidates []*model.Novel, reply string) {
 	if path == "" {
 		path = "/tmp/novel_feedback.log"
 	}

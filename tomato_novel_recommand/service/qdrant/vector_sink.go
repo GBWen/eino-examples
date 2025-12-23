@@ -5,20 +5,13 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"log"
+	"strings"
+
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/service/model"
 )
 
 // EmbedFunc defines embedding function signature.
 type EmbedFunc func(ctx context.Context, text string) ([]float32, error)
-
-// NovelPayload is a minimal payload for vector storage.
-type NovelPayload struct {
-	Title       string
-	Author      string
-	Genre       string
-	Description string
-	Link        string
-	Source      string
-}
 
 // VectorSink writes novel payloads into Qdrant.
 type VectorSink struct {
@@ -39,8 +32,8 @@ func NewVectorSink(embed EmbedFunc) *VectorSink {
 	}
 }
 
-// Store persists novel payloads with generated vectors.
-func (s *VectorSink) Store(ctx context.Context, novels []NovelPayload) error {
+// StoreNovels persists novel payloads with generated vectors.
+func (s *VectorSink) StoreNovels(ctx context.Context, novels []*model.Novel) error {
 	if len(novels) == 0 {
 		return nil
 	}
@@ -63,10 +56,10 @@ func (s *VectorSink) Store(ctx context.Context, novels []NovelPayload) error {
 			"payload": map[string]any{
 				"title":       n.Title,
 				"author":      n.Author,
-				"genre":       n.Genre,
+				"genre":       n.Category,
 				"description": n.Description,
 				"link":        n.Link,
-				"source":      n.Source,
+				"source":      inferSource(n),
 			},
 		})
 	}
@@ -84,3 +77,9 @@ func makeStableID(title, author string) string {
 	return fmt.Sprintf("%x", sum[:16])
 }
 
+func inferSource(n *model.Novel) string {
+	if strings.TrimSpace(n.Category) != "" {
+		return n.Category
+	}
+	return "novel_search"
+}

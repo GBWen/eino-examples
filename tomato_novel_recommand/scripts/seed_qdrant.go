@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cloudwego/eino-examples/tomato_novel_recommand/qdrant"
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/service/qdrant"
 )
 
 // Novel represents the minimal schema we ingest into Qdrant.

@@ -8,15 +8,15 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/service/model"
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/service/qdrant"
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-
-	"github.com/cloudwego/eino-examples/tomato_novel_recommand/qdrant"
 )
 
 // EmbedFunc abstracts a text-embedding function.
-// Caller can plug in any embedding service.
-type EmbedFunc func(ctx context.Context, text string) ([]float32, error)
+// Reuse qdrant's signature to keep sink and search consistent.
+type EmbedFunc = qdrant.EmbedFunc
 
 // qdrantSearchRequest is a minimal search request payload for Qdrant.
 type qdrantSearchRequest struct {
@@ -37,7 +37,7 @@ type qdrantSearchResponse struct {
 	Time float64 `json:"time"`
 }
 
-func qdrantSearch(ctx context.Context, client *qdrant.Client, vec []float32, topN int, genre string) ([]*Novel, error) {
+func qdrantSearch(ctx context.Context, client *qdrant.Client, vec []float32, topN int, genre string) ([]*model.Novel, error) {
 	reqBody := qdrantSearchRequest{
 		Vector: vec,
 		Limit:  topN,
@@ -81,10 +81,10 @@ func qdrantSearch(ctx context.Context, client *qdrant.Client, vec []float32, top
 		return nil, err
 	}
 
-	var novels []*Novel
+	var novels []*model.Novel
 	for _, item := range r.Result {
 		payload := item.Payload
-		novels = append(novels, &Novel{
+		novels = append(novels, &model.Novel{
 			Title:       strFromPayload(payload, "title"),
 			Author:      strFromPayload(payload, "author"),
 			Category:    strFromPayload(payload, "genre"),
@@ -145,7 +145,7 @@ func NewNovelVectorSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 			if err != nil {
 				// Fallback: return empty list and let upper layer decide whether to fall back to keyword search.
 				log.Printf("[tool] novel_vector_search qdrant search failed, err=%v", err)
-				return &NovelSearchOutput{Novels: []*Novel{}}, fmt.Errorf("qdrant search failed: %w", err)
+				return &NovelSearchOutput{Novels: []*model.Novel{}}, fmt.Errorf("qdrant search failed: %w", err)
 			}
 			out := &NovelSearchOutput{Novels: novels}
 			log.Printf("[tool] novel_vector_search ok, got %d novels", len(out.Novels))

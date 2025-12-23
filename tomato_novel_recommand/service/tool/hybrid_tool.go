@@ -6,10 +6,10 @@ import (
 	"log"
 	"strings"
 
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/service/model"
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/service/qdrant"
 	einotool "github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
-
-	"github.com/cloudwego/eino-examples/tomato_novel_recommand/qdrant"
+	einoutils "github.com/cloudwego/eino/components/tool/utils"
 )
 
 // NovelHybridSearchInput allows combined API + vector search.
@@ -27,9 +27,9 @@ func NewNovelHybridSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 	}
 	qc := qdrant.NewFromEnv()
 	// Reuse the same embed + qdrant client to persist fresh API results into vectors.
-	sink := &qdrantVectorSink{client: qc, embed: embedFn}
+	sink := qdrant.NewVectorSink(embedFn)
 
-	toolImpl, err := utils.InferTool(
+	toolImpl, err := einoutils.InferTool(
 		"novel_hybrid_search",
 		"Hybrid search that combines API keyword results with vector DB matches, merges and deduplicates to return the best candidates.",
 		func(ctx context.Context, input *NovelHybridSearchInput) (output *NovelSearchOutput, err error) {
@@ -61,7 +61,7 @@ func NewNovelHybridSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 			}
 
 			// 2) Vector semantic search (relevance)
-			vecNovels := []*Novel{}
+			var vecNovels []*model.Novel
 			if vec, err := embedFn(ctx, query); err != nil {
 				log.Printf("[tool] hybrid embed failed: %v", err)
 			} else if novels, err := qdrantSearch(ctx, qc, vec, topN, input.Genre); err != nil {
@@ -81,14 +81,14 @@ func NewNovelHybridSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 }
 
 // mergeNovels deduplicates by title+author, and keeps order: vector-first, then API.
-func mergeNovels(limit int, vec []*Novel, api []*Novel) []*Novel {
-	key := func(n *Novel) string {
+func mergeNovels(limit int, vec []*model.Novel, api []*model.Novel) []*model.Novel {
+	key := func(n *model.Novel) string {
 		return strings.ToLower(n.Title + "::" + n.Author)
 	}
 	seen := make(map[string]struct{})
-	out := make([]*Novel, 0, limit)
+	out := make([]*model.Novel, 0, limit)
 
-	for _, list := range [][]*Novel{vec, api} {
+	for _, list := range [][]*model.Novel{vec, api} {
 		for _, n := range list {
 			if len(out) >= limit {
 				return out
@@ -103,4 +103,3 @@ func mergeNovels(limit int, vec []*Novel, api []*Novel) []*Novel {
 	}
 	return out
 }
-

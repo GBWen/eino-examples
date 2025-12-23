@@ -9,19 +9,11 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/service/model"
 	"github.com/cloudwego/eino-examples/tomato_novel_recommand/utils"
 	einotool "github.com/cloudwego/eino/components/tool"
 	einoutils "github.com/cloudwego/eino/components/tool/utils"
 )
-
-// Novel represents the key information of a single novel.
-type Novel struct {
-	Title       string `json:"title"`
-	Author      string `json:"author"`
-	Category    string `json:"category"`
-	Description string `json:"description"`
-	Link        string `json:"link"`
-}
 
 // NovelSearchInput is the input schema of the NovelSearch tool.
 // It uses jsonschema_description and enum tags for better tool documentation.
@@ -33,12 +25,7 @@ type NovelSearchInput struct {
 
 // NovelSearchOutput is the output schema of the NovelSearch tool.
 type NovelSearchOutput struct {
-	Novels []*Novel `json:"novels"`
-}
-
-// NovelResultSink can persist/search results into a backing store (e.g. Qdrant).
-type NovelResultSink interface {
-	StoreNovels(ctx context.Context, novels []*Novel) error
+	Novels []*model.Novel `json:"novels"`
 }
 
 // NovelSearchParam is the internal parameter struct for API calls (kept for backwards compatibility).
@@ -56,7 +43,7 @@ func NewNovelSearchTool() einotool.InvokableTool {
 
 // NewNovelSearchToolWithSink allows the caller to plug in a sink to persist every search result
 // (e.g. write into vector DB for later semantic search).
-func NewNovelSearchToolWithSink(sink NovelResultSink) einotool.InvokableTool {
+func NewNovelSearchToolWithSink(sink model.NovelResultSink) einotool.InvokableTool {
 	novelSearchTool, err := einoutils.InferTool(
 		"novel_search",
 		"Search novels based on user-provided keyword or genre, and return suitable candidates.",
@@ -122,7 +109,7 @@ type xcvtsAPIResponse struct {
 
 // search calls the novel search API (小尘API by default).
 // API format: GET {baseURL}?q={keyword}
-func (c *novelAPIClient) search(ctx context.Context, p NovelSearchParam) ([]*Novel, error) {
+func (c *novelAPIClient) search(ctx context.Context, p NovelSearchParam) ([]*model.Novel, error) {
 	// Build search query: use keyword, fallback to genre if keyword is empty
 	query := p.Keyword
 	if query == "" {
@@ -182,10 +169,10 @@ func (c *novelAPIClient) search(ctx context.Context, p NovelSearchParam) ([]*Nov
 
 // parseResponseData parses the data field from API response.
 // It can be an array of novels or an object (error/info message).
-func (c *novelAPIClient) parseResponseData(data interface{}, p NovelSearchParam) ([]*Novel, error) {
+func (c *novelAPIClient) parseResponseData(data interface{}, p NovelSearchParam) ([]*model.Novel, error) {
 	// Try to parse as array of novels
 	if arr, ok := data.([]interface{}); ok {
-		var novels []*Novel
+		var novels []*model.Novel
 		for _, item := range arr {
 			itemMap, ok := item.(map[string]interface{})
 			if !ok {
@@ -193,7 +180,7 @@ func (c *novelAPIClient) parseResponseData(data interface{}, p NovelSearchParam)
 			}
 
 			// Parse individual novel item
-			novel := &Novel{
+			novel := &model.Novel{
 				Title:       getString(itemMap, "title"),
 				Author:      getString(itemMap, "author"),
 				Category:    utils.Coalesce(p.Genre, "未知"), // API doesn't provide category, use genre param or default
@@ -233,7 +220,7 @@ var (
 )
 
 // callNovelAPI calls the novel search API.
-func callNovelAPI(ctx context.Context, p NovelSearchParam) ([]*Novel, error) {
+func callNovelAPI(ctx context.Context, p NovelSearchParam) ([]*model.Novel, error) {
 	if apiClient == nil {
 		apiClient = newNovelAPIClient()
 	}

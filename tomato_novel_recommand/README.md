@@ -24,12 +24,13 @@
 - `main.go`：交互式 CLI 入口，调用 `service` 装配并启动
 - `service/app.go`：业务装配（模型、Embedding、向量落库、工具绑定、交互循环）
 - `service/llm/`：Ark Chat 模型与 Embedding 封装
+- `service/model/`：领域模型与接口（`Novel`、`NovelResultSink`）
+- `service/qdrant/`：Qdrant 客户端与向量落库（`vector_sink.go` 实现 `NovelResultSink`）
 - `service/workflow/`：反馈记录（可选，用于后续用户画像更新）
 - `service/tool/`：Tool 封装
   - `novel_tool.go`：关键词搜索 Tool（默认，且将结果落库到向量 DB）
   - `hybrid_tool.go`：混合检索（API + 向量库，合并去重）
   - `vector_tool.go`：向量检索 Tool（可选扩展，需 Qdrant + Embedding）
-  - `vector_sink.go`：向量落库封装（使用 Embed + Qdrant upsert）
   - `clarify_tool.go`：澄清工具
 - `service/graph/`：ReAct Agent 循环封装（CLI 交互）
 
@@ -127,6 +128,7 @@ ARK_API_KEY=xxx go run ./tomato_novel_recommand
 - 环境变量（有默认值，可不设）：
   - `QDRANT_URL`（默认 `http://localhost:6333`）
   - `QDRANT_COLLECTION`（默认 `novels`）
+- 向量落库由 `service/qdrant/vector_sink.go` 提供的 `NewVectorSink` 直接实现 `NovelResultSink`，工具层无需额外适配器。
 
 #### Embedding
 - 必填：`EMBED_API_KEY`。默认使用模型 `doubao-embedding-vision-250615`，可用 `EMBED_MODEL` 覆盖；可设置 `EMBED_BASE_URL`。
