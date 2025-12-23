@@ -40,14 +40,9 @@ func Run(ctx context.Context) {
 		tools.NewNovelSearchToolWithSink(vectorSink), // Keyword search + persist to vector DB
 		tools.NewNovelHybridSearchTool(embedFn, qc),  // Hybrid: API + vector merge
 		tools.NewClarifyTool(),                       // Clarification tool: ask user for more details when needed
+		tools.NewNovelVectorSearchTool(embedFn, qc),  // Pure vector search (semantic retrieval)
 	}
-
-	// Optional: keep pure vector search tool if you want the agent to choose it explicitly.
-	if embedFn != nil {
-		vecTool := tools.NewNovelVectorSearchTool(embedFn, qc)
-		toolsList = append(toolsList, vecTool)
-		log.Printf("Vector search tool enabled (semantic retrieval available)\n")
-	}
+	log.Printf("Tools bound: keyword + hybrid + clarify + vector (semantic)\n")
 
 	// Bind all tools to the model
 	// It will automatically decide which tool to use
