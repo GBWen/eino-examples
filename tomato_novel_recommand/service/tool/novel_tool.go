@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	apputils "github.com/cloudwego/eino-examples/tomato_novel_recommand/utils"
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 )
@@ -195,7 +196,7 @@ func (c *novelAPIClient) parseResponseData(data interface{}, p NovelSearchParam)
 			novel := &Novel{
 				Title:       getString(itemMap, "title"),
 				Author:      getString(itemMap, "author"),
-				Category:    coalesce(p.Genre, "未知"), // API doesn't provide category, use genre param or default
+				Category:    apputils.Coalesce(p.Genre, "未知"), // API doesn't provide category, use genre param or default
 				Description: getString(itemMap, "abstract"),
 			}
 
