@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
@@ -22,10 +23,14 @@ func NewClarifyTool() einotool.InvokableTool {
 			"This tool returns a clarification question that you should ask the user. "+
 			"After asking, wait for the user's response in the next turn before calling search tools.",
 		func(ctx context.Context, input *ClarifyInput) (output string, err error) {
+			log.Printf("[tool] invoke clarify_missing_info, input=%+v", input)
 			if input.Question == "" {
 				// Default question if not provided
-				return "请告诉我你想看的题材（如玄幻、都市、言情、悬疑等）和风格偏好（如爽文、慢热、甜宠、系统流等），这样我才能为你推荐合适的小说。", nil
+				q := "请告诉我你想看的题材（如玄幻、都市、言情、悬疑等）和风格偏好（如爽文、慢热、甜宠、系统流等），这样我才能为你推荐合适的小说。"
+				log.Printf("[tool] clarify_missing_info using default question")
+				return q, nil
 			}
+			log.Printf("[tool] clarify_missing_info using model-provided question")
 			return input.Question, nil
 		},
 	)

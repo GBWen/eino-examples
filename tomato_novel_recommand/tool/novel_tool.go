@@ -49,6 +49,7 @@ func NewNovelSearchTool() einotool.InvokableTool {
 		"novel_search",
 		"Search novels based on user-provided keyword or genre, and return suitable candidates.",
 		func(ctx context.Context, input *NovelSearchInput) (output *NovelSearchOutput, err error) {
+			log.Printf("[tool] invoke novel_search, input=%+v", input)
 			if input.TopN == 0 {
 				input.TopN = 5
 			}
@@ -59,10 +60,13 @@ func NewNovelSearchTool() einotool.InvokableTool {
 				TopN:    input.TopN,
 			})
 			if err != nil {
+				log.Printf("[tool] novel_search failed, err=%v", err)
 				return nil, fmt.Errorf("call novel api failed: %w", err)
 			}
 
-			return &NovelSearchOutput{Novels: novels}, nil
+			out := &NovelSearchOutput{Novels: novels}
+			log.Printf("[tool] novel_search ok, got %d novels", len(out.Novels))
+			return out, nil
 		},
 	)
 	if err != nil {
@@ -111,6 +115,7 @@ func (c *novelAPIClient) search(ctx context.Context, p NovelSearchParam) ([]*Nov
 
 	// Build URL with query parameter
 	reqURL := fmt.Sprintf("%s?q=%s", novelAPIBaseURL, url.QueryEscape(query))
+	log.Printf("[novel_api] searching novels, query=%q, genre=%q, topN=%d, url=%s", p.Keyword, p.Genre, p.TopN, reqURL)
 
 	// Create HTTP GET request
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
@@ -122,24 +127,28 @@ func (c *novelAPIClient) search(ctx context.Context, p NovelSearchParam) ([]*Nov
 	// Send request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		log.Printf("[novel_api] request failed, err=%v", err)
 		return nil, fmt.Errorf("api call failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Check status code
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("[novel_api] non-200 status, code=%d", resp.StatusCode)
 		return nil, fmt.Errorf("api returned status %d", resp.StatusCode)
 	}
 
 	// Parse response
 	var apiResp xcvtsAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		log.Printf("[novel_api] decode response failed, err=%v", err)
 		return nil, fmt.Errorf("decode response failed: %w", err)
 	}
 
 	// Check if data is an array (search results) or object (error/info)
 	novels, err := c.parseResponseData(apiResp.Data, p)
 	if err != nil {
+		log.Printf("[novel_api] parse response data failed, err=%v", err)
 		return nil, fmt.Errorf("parse response data failed: %w", err)
 	}
 
@@ -148,6 +157,7 @@ func (c *novelAPIClient) search(ctx context.Context, p NovelSearchParam) ([]*Nov
 		novels = novels[:p.TopN]
 	}
 
+	log.Printf("[novel_api] search ok, got %d novels (after topN limit)", len(novels))
 	return novels, nil
 }
 

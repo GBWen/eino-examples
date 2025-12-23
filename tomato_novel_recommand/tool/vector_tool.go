@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
+
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/config"
 )
 
 // EmbedFunc abstracts a text-embedding function.
@@ -26,18 +27,10 @@ type qdrantClient struct {
 }
 
 func newQdrantClientFromEnv() *qdrantClient {
-	base := os.Getenv("QDRANT_URL")
-	if base == "" {
-		// TODO: make Qdrant endpoint configurable via config file/flags instead of hardcoding localhost.
-		base = "http://localhost:6333"
-	}
-	coll := os.Getenv("QDRANT_COLLECTION")
-	if coll == "" {
-		coll = "novels"
-	}
+	qc := config.LoadQdrantConfig()
 	return &qdrantClient{
-		baseURL:    base,
-		collection: coll,
+		baseURL:    qc.URL,
+		collection: qc.Collection,
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 }
@@ -78,24 +71,29 @@ func (c *qdrantClient) search(ctx context.Context, vec []float32, topN int, genr
 
 	b, _ := json.Marshal(reqBody)
 	url := fmt.Sprintf("%s/collections/%s/points/search", c.baseURL, c.collection)
+	log.Printf("[qdrant] vector search, collection=%s, topN=%d, genre=%q, url=%s", c.collection, topN, genre, url)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
+		log.Printf("[qdrant] build request failed, err=%v", err)
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
+		log.Printf("[qdrant] request failed, err=%v", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
+		log.Printf("[qdrant] non-2xx status, code=%d", resp.StatusCode)
 		return nil, fmt.Errorf("qdrant search status %d", resp.StatusCode)
 	}
 
 	var r qdrantSearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		log.Printf("[qdrant] decode response failed, err=%v", err)
 		return nil, err
 	}
 
@@ -110,6 +108,7 @@ func (c *qdrantClient) search(ctx context.Context, vec []float32, topN int, genr
 			Link:        strFromPayload(payload, "link"),
 		})
 	}
+	log.Printf("[qdrant] search ok, got %d novels", len(novels))
 	return novels, nil
 }
 
@@ -141,6 +140,7 @@ func NewNovelVectorSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 		"novel_vector_search",
 		"Vector-based novel search using Qdrant, supports keyword/genre/top_n.",
 		func(ctx context.Context, input *NovelVectorSearchInput) (output *NovelSearchOutput, err error) {
+			log.Printf("[tool] invoke novel_vector_search, input=%+v", input)
 			if embedFn == nil {
 				return nil, fmt.Errorf("embedFn is nil: please provide an embedding implementation when creating the tool")
 			}
@@ -154,14 +154,18 @@ func NewNovelVectorSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 			}
 			vec, err := embedFn(ctx, query)
 			if err != nil {
+				log.Printf("[tool] novel_vector_search embed failed, err=%v", err)
 				return nil, fmt.Errorf("embed failed: %w", err)
 			}
 			novels, err := qc.search(ctx, vec, topN, input.Genre)
 			if err != nil {
 				// Fallback: return empty list and let upper layer decide whether to fall back to keyword search.
+				log.Printf("[tool] novel_vector_search qdrant search failed, err=%v", err)
 				return &NovelSearchOutput{Novels: []*Novel{}}, fmt.Errorf("qdrant search failed: %w", err)
 			}
-			return &NovelSearchOutput{Novels: novels}, nil
+			out := &NovelSearchOutput{Novels: novels}
+			log.Printf("[tool] novel_vector_search ok, got %d novels", len(out.Novels))
+			return out, nil
 		},
 	)
 	if err != nil {
