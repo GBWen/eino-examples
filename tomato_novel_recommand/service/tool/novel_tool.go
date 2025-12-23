@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"time"
 
-	apputils "github.com/cloudwego/eino-examples/tomato_novel_recommand/utils"
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/utils"
 	einotool "github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
+	einoutils "github.com/cloudwego/eino/components/tool/utils"
 )
 
 // Novel represents the key information of a single novel.
@@ -57,7 +57,7 @@ func NewNovelSearchTool() einotool.InvokableTool {
 // NewNovelSearchToolWithSink allows the caller to plug in a sink to persist every search result
 // (e.g. write into vector DB for later semantic search).
 func NewNovelSearchToolWithSink(sink NovelResultSink) einotool.InvokableTool {
-	novelSearchTool, err := utils.InferTool(
+	novelSearchTool, err := einoutils.InferTool(
 		"novel_search",
 		"Search novels based on user-provided keyword or genre, and return suitable candidates.",
 		func(ctx context.Context, input *NovelSearchInput) (output *NovelSearchOutput, err error) {
@@ -196,7 +196,7 @@ func (c *novelAPIClient) parseResponseData(data interface{}, p NovelSearchParam)
 			novel := &Novel{
 				Title:       getString(itemMap, "title"),
 				Author:      getString(itemMap, "author"),
-				Category:    apputils.Coalesce(p.Genre, "未知"), // API doesn't provide category, use genre param or default
+				Category:    utils.Coalesce(p.Genre, "未知"), // API doesn't provide category, use genre param or default
 				Description: getString(itemMap, "abstract"),
 			}
 
