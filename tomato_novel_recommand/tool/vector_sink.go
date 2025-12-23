@@ -1,18 +1,17 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha1"
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
+
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/qdrant"
 )
 
 // qdrantVectorSink writes novels into Qdrant so that subsequent vector searches can reuse them.
 type qdrantVectorSink struct {
-	client *qdrantClient
+	client *qdrant.Client
 	embed  EmbedFunc
 	// cache the first successful vector dimension to avoid recreating collection repeatedly.
 	dim int
@@ -25,7 +24,7 @@ func NewQdrantVectorSink(embed EmbedFunc) NovelResultSink {
 		return nil
 	}
 	return &qdrantVectorSink{
-		client: newQdrantClientFromEnv(),
+		client: qdrant.NewFromEnv(),
 		embed:  embed,
 	}
 }
@@ -43,7 +42,7 @@ func (s *qdrantVectorSink) StoreNovels(ctx context.Context, novels []*Novel) err
 		}
 		if s.dim == 0 {
 			s.dim = len(vec)
-			if err := s.client.ensureCollection(s.dim); err != nil {
+			if err := s.client.EnsureCollection(s.dim); err != nil {
 				return err
 			}
 		}
@@ -61,10 +60,10 @@ func (s *qdrantVectorSink) StoreNovels(ctx context.Context, novels []*Novel) err
 		})
 	}
 
-	if err := s.client.upsertPoints(points); err != nil {
+	if err := s.client.UpsertPoints(points); err != nil {
 		return fmt.Errorf("qdrant upsert failed: %w", err)
 	}
-	log.Printf("[qdrant] sink upserted %d novels into %s", len(points), s.client.collection)
+	log.Printf("[qdrant] sink upserted %d novels into %s", len(points), s.client.Collection())
 	return nil
 }
 
@@ -73,60 +72,3 @@ func makeStableID(n *Novel) string {
 	sum := sha1.Sum([]byte(key))
 	return fmt.Sprintf("%x", sum[:16])
 }
-
-// ensureCollection creates the collection if missing.
-func (c *qdrantClient) ensureCollection(dim int) error {
-	payload := map[string]any{
-		"vectors": map[string]any{
-			"size":     dim,
-			"distance": "Cosine",
-		},
-	}
-	b, _ := json.Marshal(payload)
-	url := fmt.Sprintf("%s/collections/%s", c.baseURL, c.collection)
-
-	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// 200 OK or 409 Conflict (already exists) are both acceptable.
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
-		return fmt.Errorf("ensure collection status %d", resp.StatusCode)
-	}
-	return nil
-}
-
-// upsertPoints writes points using the standard Qdrant /points endpoint.
-func (c *qdrantClient) upsertPoints(points []map[string]any) error {
-	body := map[string]any{
-		"points": points,
-	}
-	b, _ := json.Marshal(body)
-
-	url := fmt.Sprintf("%s/collections/%s/points", c.baseURL, c.collection)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("upsert status %d", resp.StatusCode)
-	}
-	return nil
-}
-

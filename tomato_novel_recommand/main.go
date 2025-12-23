@@ -22,23 +22,6 @@ import (
 	einotool "github.com/cloudwego/eino/components/tool"
 )
 
-// newDemoEmbedFn provides a simple fake embedding function for demo purposes.
-// In real scenarios, replace this with your own embedding service (e.g. Ark Embedding).
-func newDemoEmbedFn() tools.EmbedFunc {
-	// Returns a fixed-dimension pseudo vector (good enough for local demo).
-	// In production, use real model outputs and ensure the dim matches Qdrant collection.
-	// TODO: replace this demo embedding with a real embedding model (e.g. Ark Embedding API).
-	const dim = 8
-	return func(_ context.Context, text string) ([]float32, error) {
-		vec := make([]float32, dim)
-		// Simple hash-based projection to float values, only for demo (not a real embedding).
-		for i, r := range []rune(text) {
-			vec[i%dim] += float32(r%113) / 100.0
-		}
-		return vec, nil
-	}
-}
-
 func main() {
 	ctx := context.Background()
 
@@ -68,7 +51,7 @@ func main() {
 	if embedFn != nil {
 		vecTool := tools.NewNovelVectorSearchTool(embedFn)
 		toolsList = append(toolsList, vecTool)
-		log.Printf("Vector search tool enabled (for large-scale book library)\n")
+		log.Printf("Vector search tool enabled (semantic retrieval available)\n")
 	}
 
 	// Bind all tools to the model

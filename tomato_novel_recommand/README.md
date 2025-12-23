@@ -8,7 +8,7 @@
 - 使用 **ReAct Agent** 让模型自动决定何时调用哪个 Tool
 - 默认使用 **关键词搜索**，同时把每次 API 结果落到向量库（Qdrant）
 - 内置 **混合检索**（关键词 API + 向量库合并去重），兼顾新鲜度与相关性
-- 也保留 **纯向量检索** 作为可选扩展（适合大规模书库，百万级以上）
+- 也保留 **纯向量检索** 作为可选扩展（需要语义检索时启用）
 
 **工作流程：**
 1. 用户输入偏好 → ReAct Agent 接收
@@ -34,20 +34,44 @@
 
 ### 0. 前置要求
 
-1. 安装依赖（在仓库根目录）：
+1) 安装依赖（在仓库根目录）：
 
 ```bash
 go mod tidy
 ```
 
-2. 准备 Ark API Key：
+2) 环境变量（全部在仓库根目录执行）：
+
+- 必填：`ARK_API_KEY`（聊天/Tool 调用的 Ark 密钥）
+- 必填：`EMBED_API_KEY`（向量写入/检索所需；无回退，缺失会直接退出）
+- 可选：`ARK_BASE_URL`、`QDRANT_URL`、`QDRANT_COLLECTION`、`EMBED_BASE_URL`、`EMBED_MODEL`
+
+示例：
 
 ```bash
 export ARK_API_KEY=你的_ark_api_key
+export EMBED_API_KEY=你的_embed_api_key
+# export QDRANT_URL=http://localhost:6333
+# export QDRANT_COLLECTION=novels
 ```
 
+如需自定义模型或 BaseURL，可以在 `flow/ark.go` 调整 `ark.ChatModelConfig`，在 `config/` 中调整 Qdrant 默认值。
 
-如需自定义模型或 BaseURL，可以在 `flow/ark.go` 中调整 `ark.ChatModelConfig`。
+3) 本地启动 Qdrant（推荐直接用内置数据）：
+
+```bash
+docker compose -f tomato_novel_recommand/docker-compose.yml up -d
+```
+
+`docker-compose.yml` 会把仓库内的 `qdrant_data/` 挂载到容器，包含预先准备好的示例数据。
+
+4) （可选）重新灌库：
+- 如果想用自己的向量数据，可运行 `scripts/seed_qdrant.go`
+- 需要有效的 `EMBED_API_KEY`，会从公开接口抓取 20 条示例书目并写入 Qdrant
+
+```bash
+ARK_API_KEY=xxx EMBED_API_KEY=xxx go run ./tomato_novel_recommand/scripts/seed_qdrant.go
+```
 
 ### 1. 运行 Demo
 
@@ -98,22 +122,18 @@ ARK_API_KEY=xxx go run ./tomato_novel_recommand
 如需仅关闭纯向量检索，可在 `main.go` 去掉 `NewNovelVectorSearchTool` 的 append。
 
 #### Qdrant 配置
-- 启动本地 Qdrant（可用 `docker-compose.yml`）：`docker compose up -d qdrant`
+- 启动本地 Qdrant（建议用上面的 docker compose，自动挂载示例数据）
 - 环境变量（有默认值，可不设）：
   - `QDRANT_URL`（默认 `http://localhost:6333`）
   - `QDRANT_COLLECTION`（默认 `novels`）
 
 #### Embedding
 - 必填：`EMBED_API_KEY`。默认使用模型 `doubao-embedding-vision-250615`，可用 `EMBED_MODEL` 覆盖；可设置 `EMBED_BASE_URL`。
-- 不再提供伪向量回退，未配置会直接退出，确保写入/查询维度与真实模型一致。
+- 已移除伪向量回退，必须提供真实 embedding。缺失会直接退出，请确保写入/查询维度与 Qdrant collection 一致。
 
 ### 3. TODO / 后续扩展方向
 
 代码里已经标了一些关键 TODO，可以按需实现成你的业务版本：
-
-- **向量检索扩展（可选）**
-  - `main.go`：`newDemoEmbedFn` 只是一个伪向量生成。  
-    - TODO：替换为真实 Embedding 服务（例如 Ark Embedding），并保证向量维度与 Qdrant collection 一致。
 
 - **反馈闭环 & 兴趣向量**
   - `workflow/feedback.go`：当前只是将反馈 append 到 `/tmp/novel_feedback.log`。  

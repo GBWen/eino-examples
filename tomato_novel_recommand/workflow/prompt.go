@@ -37,7 +37,7 @@ func GetSystemPrompt(ctx context.Context, toolsList []tool.BaseTool) string {
 			toolDescs = append(toolDescs, "- novel_hybrid_search: 组合“API关键词搜索 + 向量库语义搜索”，去重合并后返回更匹配的候选")
 		case "novel_vector_search":
 			hasVectorSearch = true
-			toolDescs = append(toolDescs, "- novel_vector_search: 基于语义向量搜索小说（适合大规模书库）")
+			toolDescs = append(toolDescs, "- novel_vector_search: 基于语义向量搜索小说")
 		}
 	}
 
@@ -48,7 +48,7 @@ func GetSystemPrompt(ctx context.Context, toolsList []tool.BaseTool) string {
 	// Build workflow description based on available tools
 	var workflowSteps []string
 	if hasClarify {
-		workflowSteps = append(workflowSteps, "1) **重要**：如果用户需求模糊（如只说'推荐'、'随便'、'好看的书'等），或缺少关键信息（题材、风格、关键词），必须先使用 clarify_missing_info 工具询问用户，获取明确偏好后再搜索")
+		workflowSteps = append(workflowSteps, "1) **重要**：如果用户需求模糊（如只说'推荐'、'随便'、'好看的书'等），或缺少关键信息（题材、风格、关键词、篇幅），必须先使用 clarify_missing_info 工具询问用户；默认先问1-2个针对性的偏好问题（题材/风格/篇幅/节奏），获取明确偏好后再搜索，不要自行猜测")
 	}
 	if hasHybrid {
 		workflowSteps = append(workflowSteps, "2) 在用户需求明确后，优先调用 hybrid（API+向量）获取更丰富候选；必要时可再调用纯关键词/向量补充")
@@ -63,6 +63,7 @@ func GetSystemPrompt(ctx context.Context, toolsList []tool.BaseTool) string {
 
 	basePrompt += "**重要规则**：\n" +
 		"- 如果用户输入过于简单或模糊（少于10个字，或缺少具体偏好），必须先澄清，不要直接搜索\n" +
+		"- 默认先问1-2个针对性的澄清问题（题材/风格/篇幅/节奏），得到回答后再决定搜索；不要凭空假设偏好\n" +
 		"- 只有在用户提供了明确的题材、风格、关键词等信息后，才调用搜索工具\n" +
 		"- 回答中推荐书目时，优先使用工具结果中的 title / author / category / description / link 字段，并明确写出“阅读链接：<URL>”\n" +
 		"- 回答时使用自然、口语化的中文"

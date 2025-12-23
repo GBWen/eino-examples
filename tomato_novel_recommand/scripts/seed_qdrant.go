@@ -14,6 +14,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/qdrant"
 )
 
 // Novel represents the minimal schema we ingest into Qdrant.
@@ -119,65 +121,6 @@ func (c *EmbedClient) Embed(ctx context.Context, text string) ([]float32, error)
 	return nil, fmt.Errorf("unexpected embedding response format: %s", string(raw))
 }
 
-// qdrantCreateCollection 确保 collection 存在
-func qdrantCreateCollection(baseURL, collection string, dim int) error {
-	payload := map[string]interface{}{
-		"vectors": map[string]interface{}{
-			"size":     dim,
-			"distance": "Cosine",
-		},
-	}
-	b, _ := json.Marshal(payload)
-	req, err := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/collections/%s", baseURL, collection), bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		// 409 = already exists; treat as success to allow idempotent seeding.
-		if resp.StatusCode == http.StatusConflict {
-			log.Printf("collection %s already exists, skip create", collection)
-			return nil
-		}
-		return fmt.Errorf("create collection status %d, body=%s", resp.StatusCode, string(body))
-	}
-	return nil
-}
-
-// qdrantUpsert writes points using batch format (ids + vectors + payloads).
-// qdrantUpsert 写入 points，兼容最新 Qdrant HTTP API
-func qdrantUpsert(baseURL, collection string, points []map[string]interface{}) error {
-	body := map[string]interface{}{
-		"points": points, // points 每个元素都包含 "id", "vector", "payload"
-	}
-	b, _ := json.Marshal(body)
-
-	req, err := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/collections/%s/points", baseURL, collection), bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("upsert failed, status=%d, body=%s", resp.StatusCode, string(respBody))
-	}
-
-	return nil
-}
-
 func fetchNovels(q string) ([]*Novel, error) {
 	apiURL := fmt.Sprintf("https://api.xcvts.cn/api/xiaoshuo/fanqie?q=%s", url.QueryEscape(q))
 	req, _ := http.NewRequest(http.MethodGet, apiURL, nil)
@@ -234,14 +177,7 @@ func main() {
 		log.Fatalf("init embed client failed: %v", err)
 	}
 
-	baseURL := os.Getenv("QDRANT_URL")
-	if baseURL == "" {
-		baseURL = "http://localhost:6333"
-	}
-	collection := os.Getenv("QDRANT_COLLECTION")
-	if collection == "" {
-		collection = "novels"
-	}
+	client := qdrant.NewFromEnv()
 
 	queries := []string{"玄幻", "都市", "言情", "科幻", "悬疑", "历史"}
 	target := 20
@@ -293,15 +229,15 @@ func main() {
 
 	// Create/overwrite collection using the first vector's dimension
 	dim := len(points[0]["vector"].([]float32))
-	if err := qdrantCreateCollection(baseURL, collection, dim); err != nil {
+	if err := client.EnsureCollection(dim); err != nil {
 		log.Fatalf("create collection failed: %v", err)
 	}
-	log.Printf("collection ready: %s (dim=%d)", collection, dim)
+	log.Printf("collection ready: %s (dim=%d)", client.Collection(), dim)
 
-	if err := qdrantUpsert(baseURL, collection, points); err != nil {
+	if err := client.UpsertPoints(points); err != nil {
 		log.Fatalf("upsert failed: %v", err)
 	}
-	log.Printf("done: upserted %d points into %s", len(points), collection)
+	log.Printf("done: upserted %d points into %s", len(points), client.Collection())
 }
 
 // deterministicUUID returns a RFC4122-compliant UUID derived from input string (stable across runs).

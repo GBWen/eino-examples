@@ -8,6 +8,8 @@ import (
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
+
+	"github.com/cloudwego/eino-examples/tomato_novel_recommand/qdrant"
 )
 
 // NovelHybridSearchInput allows combined API + vector search.
@@ -23,7 +25,9 @@ func NewNovelHybridSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 	if embedFn == nil {
 		log.Fatalf("embedFn is required for hybrid search")
 	}
-	qc := newQdrantClientFromEnv()
+	qc := qdrant.NewFromEnv()
+	// Reuse the same embed + qdrant client to persist fresh API results into vectors.
+	sink := &qdrantVectorSink{client: qc, embed: embedFn}
 
 	toolImpl, err := utils.InferTool(
 		"novel_hybrid_search",
@@ -50,13 +54,17 @@ func NewNovelHybridSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 			})
 			if apiErr != nil {
 				log.Printf("[tool] hybrid api search failed: %v", apiErr)
+			} else if len(apiNovels) > 0 {
+				if err := sink.StoreNovels(ctx, apiNovels); err != nil {
+					log.Printf("[tool] hybrid persist api results failed: %v", err)
+				}
 			}
 
 			// 2) Vector semantic search (relevance)
 			vecNovels := []*Novel{}
 			if vec, err := embedFn(ctx, query); err != nil {
 				log.Printf("[tool] hybrid embed failed: %v", err)
-			} else if novels, err := qc.search(ctx, vec, topN, input.Genre); err != nil {
+			} else if novels, err := qdrantSearch(ctx, qc, vec, topN, input.Genre); err != nil {
 				log.Printf("[tool] hybrid vector search failed: %v", err)
 			} else {
 				vecNovels = novels
