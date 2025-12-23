@@ -23,14 +23,14 @@
 
 - `main.go`：交互式 CLI 入口，调用 `service` 装配并启动
 - `service/app.go`：业务装配（模型、Embedding、向量落库、工具绑定、交互循环）
-- `service/llm/`：Ark Chat 模型与 Embedding 封装
+- `service/llm/`：Ark Chat 模型与 Embedding 封装（从 `config` 拉配置）
 - `service/model/`：领域模型与接口（`Novel`、`NovelResultSink`）
-- `service/qdrant/`：Qdrant 客户端与向量落库（`vector_sink.go` 实现 `NovelResultSink`）
+- `service/qdrant/`：Qdrant 客户端与向量落库（`vector_sink.go` 实现 `StoreNovels`，可注入 client）
 - `service/workflow/`：反馈记录（可选，用于后续用户画像更新）
-- `service/tool/`：Tool 封装
-  - `novel_tool.go`：关键词搜索 Tool（默认，且将结果落库到向量 DB）
-  - `hybrid_tool.go`：混合检索（API + 向量库，合并去重）
-  - `vector_tool.go`：向量检索 Tool（可选扩展，需 Qdrant + Embedding）
+- `service/tool/`：Tool 封装（依赖注入 embedFn / qdrant client）
+  - `novel_tool.go`：关键词搜索 Tool（默认，落库到向量 DB）
+  - `hybrid_tool.go`：混合检索（API + 向量库，合并去重；需 embedFn + qdrant client）
+  - `vector_tool.go`：向量检索 Tool（需 embedFn + qdrant client）
   - `clarify_tool.go`：澄清工具
 - `service/graph/`：ReAct Agent 循环封装（CLI 交互）
 
@@ -57,7 +57,7 @@ export EMBED_API_KEY=你的_embed_api_key
 # export QDRANT_COLLECTION=novels
 ```
 
-如需自定义模型或 BaseURL，可以在 `service/llm/ark_chat.go` 调整 `ark.ChatModelConfig`，在 `config/` 中调整 Qdrant 默认值。
+如需自定义模型或 BaseURL，可在 `config/config.go` 与对应子配置文件集中调整（Ark Chat/Embed、Qdrant、反馈路径），`app.go` 会统一从 `config.LoadConfig()` 读取。
 
 3) 本地启动 Qdrant（推荐直接用内置数据）：
 
@@ -107,9 +107,10 @@ ARK_API_KEY=xxx go run ./tomato_novel_recommand
   - 无需硬编码流程，模型自己决定：是否需要澄清 → 用哪个搜索工具 → 如何精排
 
 - **Tools** (`service/tool/`)
-  - `novel_search`：关键词搜索（默认，适合中小规模书库）
+  - `novel_search`：关键词搜索（默认，适合中小规模书库），持久化通过注入的 `NovelResultSink`
   - `clarify_missing_info`：澄清工具（模型自动调用）
-  - `novel_vector_search`：向量检索（可选，需在 `main.go` 中启用）
+  - `novel_hybrid_search`：混合检索（需注入 embedFn + qdrant client）
+  - `novel_vector_search`：向量检索（需注入 embedFn + qdrant client）
 
 - **Workflow** (`service/workflow/`)
   - `feedback.go`：记录用户反馈，用于后续用户画像更新
@@ -125,10 +126,7 @@ ARK_API_KEY=xxx go run ./tomato_novel_recommand
 
 #### Qdrant 配置
 - 启动本地 Qdrant（建议用上面的 docker compose，自动挂载示例数据）
-- 环境变量（有默认值，可不设）：
-  - `QDRANT_URL`（默认 `http://localhost:6333`）
-  - `QDRANT_COLLECTION`（默认 `novels`）
-- 向量落库由 `service/qdrant/vector_sink.go` 提供的 `NewVectorSink` 直接实现 `NovelResultSink`，工具层无需额外适配器。
+- 配置集中在 `config/qdrant.go`，`config.LoadConfig()` 会聚合；向量落库由 `service/qdrant/vector_sink.go` 的 `NewVectorSinkWithClient` 实现，工具层无需适配器。
 
 #### Embedding
 - 必填：`EMBED_API_KEY`。默认使用模型 `doubao-embedding-vision-250615`，可用 `EMBED_MODEL` 覆盖；可设置 `EMBED_BASE_URL`。
@@ -143,12 +141,6 @@ ARK_API_KEY=xxx go run ./tomato_novel_recommand
     - TODO：改为写入数据库或消息队列，异步更新用户兴趣向量 / 召回库权重。
   - `service/graph/loop.go`：当前反馈记录简化了候选列表（因为模型自动处理）。  
     - TODO：从 Tool Calling 历史中提取候选列表，用于更完整的反馈记录。
-
-- **工程化 & 可配置**
-  - `service/tool/vector_tool.go`：  
-    - TODO：通过依赖注入传入 `qdrantClient` 和 `EmbedFunc`，方便单测和多环境配置。
-  - 配置抽象：通过配置文件/启动参数统一管理 Qdrant endpoint/collection（不写死 localhost），以及 Embedding 选择和凭据。
-  - 可以进一步抽出配置结构体（如 `Config{ Ark, Qdrant, Embedding, FeedbackSink }`），统一管理所有外部依赖。
 
 
 
