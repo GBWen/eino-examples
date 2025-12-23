@@ -41,8 +41,8 @@ func RunInteractiveLoop(ctx context.Context, llm model.ToolCallingChatModel, too
 		log.Fatalf("failed to create react agent: %v", err)
 	}
 
-	// Get system prompt from workflow package
-	systemPrompt := workflow.GetSystemPrompt()
+	// Get system prompt from workflow package (dynamically generated based on available tools)
+	systemPrompt := workflow.GetSystemPrompt(ctx, toolsList)
 
 	for {
 		fmt.Print("请输入你当前想看的小说类型 / 心情 / 偏好（输入 exit 退出）：")

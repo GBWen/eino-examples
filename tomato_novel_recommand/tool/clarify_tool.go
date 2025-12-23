@@ -8,36 +8,25 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 )
 
-type clarifyOptions struct {
-	UserResponse *string
-}
-
-// WithUserResponse passes the user's response when calling the tool the second time.
-func WithUserResponse(resp string) einotool.Option {
-	return einotool.WrapImplSpecificOptFn(func(o *clarifyOptions) {
-		o.UserResponse = &resp
-	})
-}
-
 type ClarifyInput struct {
-	Question string `json:"question" jsonschema_description:"question you want to ask the user to fill in missing key information"`
+	Question string `json:"question" jsonschema_description:"The clarification question to ask the user. Should be specific and helpful, e.g. '请告诉我你想看的题材（如玄幻、都市、言情等）和风格偏好（如爽文、慢热、甜宠等）'"`
 }
 
-// NewClarifyTool creates a clarify tool:
-// - first call (no user response): returns the question to ask the user
-// - second call (with user response): returns the user's answer.
+// NewClarifyTool creates a clarify tool for ReAct Agent.
+// When called, it returns the question that should be asked to the user.
+// The agent will use this question as its response, and wait for the user's next input.
 func NewClarifyTool() einotool.InvokableTool {
-	t, err := utils.InferOptionableTool(
+	t, err := utils.InferTool(
 		"clarify_missing_info",
-		"When the user's request is incomplete, use this tool to ask a clarification question and wait for the user's answer.",
-		func(ctx context.Context, input *ClarifyInput, opts ...einotool.Option) (output string, err error) {
-			o := einotool.GetImplSpecificOptions[clarifyOptions](nil, opts...)
-			if o.UserResponse == nil {
-				// First call: return the question to ask the user.
-				return input.Question, nil
+		"Use this tool when the user's request is too vague or incomplete (e.g., just says 'recommend', '随便', or lacks genre/style preferences). "+
+			"This tool returns a clarification question that you should ask the user. "+
+			"After asking, wait for the user's response in the next turn before calling search tools.",
+		func(ctx context.Context, input *ClarifyInput) (output string, err error) {
+			if input.Question == "" {
+				// Default question if not provided
+				return "请告诉我你想看的题材（如玄幻、都市、言情、悬疑等）和风格偏好（如爽文、慢热、甜宠、系统流等），这样我才能为你推荐合适的小说。", nil
 			}
-			// Second call: return the user's answer content.
-			return *o.UserResponse, nil
+			return input.Question, nil
 		},
 	)
 	if err != nil {
