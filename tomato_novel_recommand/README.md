@@ -40,7 +40,8 @@ go mod tidy
 export ARK_API_KEY=你的_ark_api_key
 ```
 
-如需自定义模型或 BaseURL，可以在 `ark.go` 中调整 `ark.ChatModelConfig`。
+
+如需自定义模型或 BaseURL，可以在 `flow/ark.go` 中调整 `ark.ChatModelConfig`。
 
 ### 1. 运行 Demo
 
@@ -95,9 +96,7 @@ if embedFn := newDemoEmbedFn(); embedFn != nil {
 
 代码里已经标了一些关键 TODO，可以按需实现成你的业务版本：
 
-- **真实业务接入**
-  - `tool/novel_tool.go`：`callTomatoAPI` 目前是 mock 数据。  
-    - TODO：接入真实番茄小说或你自有书库的 HTTP/RPC API，替换硬编码结果。
+- **向量检索扩展（可选）**
   - `tool/vector_tool.go`：`newQdrantClientFromEnv` 里默认 `http://localhost:6333`。  
     - TODO：通过配置文件/启动参数管理 Qdrant endpoint 和 collection，而不是写死 localhost。
   - `main.go`：`newDemoEmbedFn` 只是一个伪向量生成。  
