@@ -35,7 +35,8 @@ func RunInteractiveLoop(ctx context.Context, llm model.ToolCallingChatModel, too
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: toolsList,
 		},
-		MaxStep: 10, // Limit max tool-calling steps to avoid infinite loops
+		// Allow more reasoning / tool-calling steps per turn while still preventing infinite loops.
+		MaxStep: 30,
 	})
 	if err != nil {
 		log.Fatalf("failed to create react agent: %v", err)
