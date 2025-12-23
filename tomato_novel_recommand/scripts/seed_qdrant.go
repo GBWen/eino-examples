@@ -180,7 +180,7 @@ func main() {
 	client := qdrant.NewFromEnv()
 
 	queries := []string{"玄幻", "都市", "言情", "科幻", "悬疑", "历史"}
-	target := 20
+	target := 30
 	var all []*Novel
 
 	for _, q := range queries {
