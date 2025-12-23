@@ -14,6 +14,8 @@ import (
 	"context"
 	"log"
 
+	"github.com/cloudwego/eino/schema"
+
 	"github.com/cloudwego/eino-examples/tomato_novel_recommand/flow"
 	"github.com/cloudwego/eino-examples/tomato_novel_recommand/graph"
 	tools "github.com/cloudwego/eino-examples/tomato_novel_recommand/tool"
@@ -46,17 +48,38 @@ func main() {
 	log.Printf("=== 正在创建 Ark Chat 模型 ===\n")
 	cm := flow.CreateArkChatModel(ctx)
 
-	// Keyword-search tool as a fallback (not necessarily bound to the model).
-	keywordTool := tools.NewNovelSearchTool()
-
-	// Optionally bind vector-search tool (requires embedFn and a running Qdrant).
-	var vecTool einotool.InvokableTool
-	if embedFn := newDemoEmbedFn(); embedFn != nil {
-		cm, vecTool = tools.BindNovelVectorSearchTool(ctx, cm, embedFn)
-		log.Printf("NovelVectorSearch tool (Qdrant) is bound\n\n")
-	} else {
-		log.Printf("NovelVectorSearch tool is NOT bound: embedFn is nil\n\n")
+	// Prepare tools: keyword search (default) + clarify tool
+	toolsList := []einotool.BaseTool{
+		tools.NewNovelSearchTool(), // Keyword search: fast and suitable for medium-scale book library
+		tools.NewClarifyTool(),     // Clarification tool: ask user for more details when needed
 	}
 
-	graph.RunInteractiveLoop(ctx, cm, vecTool, keywordTool)
+	// Optional: add vector search tool for large-scale book library (millions of books)
+	// Uncomment the following to enable vector search:
+	/*
+		if embedFn := newDemoEmbedFn(); embedFn != nil {
+			vecTool := tools.NewNovelVectorSearchTool(embedFn)
+			toolsList = append(toolsList, vecTool)
+			log.Printf("Vector search tool enabled (for large-scale book library)\n")
+		}
+	*/
+
+	// Bind all tools to the model
+	// The model will automatically decide which tool to use
+	var toolInfos []*schema.ToolInfo
+	for _, t := range toolsList {
+		info, err := t.Info(ctx)
+		if err != nil {
+			log.Fatalf("get tool info failed: %v", err)
+		}
+		toolInfos = append(toolInfos, info)
+	}
+	cm, err := cm.WithTools(toolInfos)
+	if err != nil {
+		log.Fatalf("bind tools failed: %v", err)
+	}
+
+	log.Printf("Tools bound: keyword search + clarify (vector search disabled by default)\n\n")
+
+	graph.RunInteractiveLoop(ctx, cm, toolsList)
 }

@@ -1,14 +1,30 @@
-## 番茄小说推荐 Demo（Ark + Tool）
+## 番茄小说推荐 Demo（Ark + ReAct Agent）
 
-这个示例演示如何用 **Eino + Ark ChatModel** 搭一个「番茄小说推荐」小应用，并接入一个 **NovelSearch Tool** 来模拟从番茄小说检索数据，再由大模型生成“标题 + 简介”的推荐结果。
+这个示例演示如何用 **Eino + Ark ChatModel + ReAct Agent** 搭一个「番茄小说推荐」小应用。
+
+### 架构设计
+
+**核心思路：关键词搜索 + LLM 精排**
+- 使用 **ReAct Agent** 让模型自动决定何时调用哪个 Tool
+- 默认使用 **关键词搜索**（适合中小规模书库，几千到几万本）
+- 预留 **向量检索** 作为可选扩展（适合大规模书库，百万级以上）
+
+**工作流程：**
+1. 用户输入偏好 → ReAct Agent 接收
+2. 模型自动判断是否需要澄清（调用 `clarify_missing_info` Tool）
+3. 模型自动调用搜索工具（`novel_search` 或 `novel_vector_search`）
+4. 模型基于搜索结果精排，生成 3-5 本推荐并给出理由
 
 ### 目录结构
 
-- `main.go`：交互式 CLI 入口（创建模型、绑定工具、启动 Agent 循环）
+- `main.go`：交互式 CLI 入口，初始化 ReAct Agent 和 Tools
 - `flow/`：流程底座，Ark ChatModel 初始化、生成/流式封装
-- `workflow/`：PromptTemplate、候选拼接、用户反馈写回
-- `tool/`：小说检索相关 Tool 封装（关键词检索 + 向量检索 + 澄清工具等）
-- `graph/`：Agent Graph/循环模板（澄清 → 检索 → 精排生成 → 反馈）
+- `workflow/`：反馈记录（可选，用于后续用户画像更新）
+- `tool/`：Tool 封装
+  - `novel_tool.go`：关键词搜索 Tool（默认使用）
+  - `vector_tool.go`：向量检索 Tool（可选扩展，需 Qdrant + Embedding）
+  - `clarify_tool.go`：澄清工具
+- `graph/`：ReAct Agent 循环封装（CLI 交互）
 
 ### 0. 前置要求
 
@@ -44,33 +60,36 @@ ARK_API_KEY=xxx go run ./tomato_novel_recommand
 - `想看轻松搞笑一点的现代言情，最好是短篇的`
 - `最近有点压力大，想看治愈一点的日常文`
 
-Ark 会基于 `workflow/template.go` 中的 PromptTemplate、`graph/loop.go` 中的 Agent 流程，以及绑定的 Tool 结果，生成一段包含多本小说「标题 + 简短推荐语」的回复。
+模型会自动调用工具并生成推荐。例如：
+- 用户说"我想看甜宠文" → 模型自动调用 `novel_search` → 基于结果生成推荐
+- 用户说"推荐"（信息不足）→ 模型自动调用 `clarify_missing_info` → 询问后搜索 → 生成推荐
 
-### 2. 当前流程说明（Flow / Graph / Workflow / Tool）
+### 2. 架构说明（ReAct Agent + Tools）
 
-整体分层与职责：
+**核心组件：**
 
-- **Component 层（Tool / ChatModel / Embedding 等）**
-  - `tool/novel_tool.go`：`novel_search` 关键词检索 Tool（用于 fallback），内部目前用 `callTomatoAPI` 返回 mock 数据。
-  - `tool/vector_tool.go`：`novel_vector_search` 向量检索 Tool，基于 Qdrant + `EmbedFunc` 封装。
-  - `tool/clarify_tool.go`：`clarify_missing_info` 澄清 Tool，在信息不足时向用户追问。
-  - `flow/ark.go`：Ark ChatModel 初始化。
-  - `flow/generate.go`：封装普通/流式生成。
+- **ReAct Agent** (`graph/loop.go`)
+  - 使用 `react.NewAgent` 创建，让模型自动决定调用哪个 Tool
+  - 模型会自动进行多轮 Tool Calling，直到生成最终推荐
+  - 无需硬编码流程，模型自己决定：是否需要澄清 → 用哪个搜索工具 → 如何精排
 
-- **Workflow Step 层**
-  - `workflow/template.go`：将「用户需求 + 检索候选 + 历史对话」拼成提示词，供 ChatModel 精排生成。
-  - `workflow/feedback.go`：将「用户输入 + 候选列表 + 模型回复」写入本地日志，作为后续更新兴趣向量/训练数据的入口。
+- **Tools** (`tool/`)
+  - `novel_search`：关键词搜索（默认，适合中小规模书库）
+  - `clarify_missing_info`：澄清工具（模型自动调用）
+  - `novel_vector_search`：向量检索（可选，需在 `main.go` 中启用）
 
-- **Graph 层**
-  - `graph/loop.go`：一个简单的 Agent 循环：
-    1. 读取用户输入；
-    2. `ensurePreference` 使用澄清 Tool 补齐关键信息；
-    3. `retrieveCandidates` 先走向量检索 Tool，失败或为空时回退到关键词检索 Tool；
-    4. 调用 `workflow.CreateMessagesFromTemplate` 将候选注入 prompt，流式输出推荐结果；
-    5. 调用 `workflow.RecordFeedback` 记录反馈。
+- **Workflow** (`workflow/`)
+  - `feedback.go`：记录用户反馈，用于后续用户画像更新
 
-- **Flow 层**
-  - `main.go`：组合上述组件，构造一个「澄清 → 检索 → 精排 → 反馈」的 ReAct 风格多轮推荐 Agent。
+**启用向量检索（可选）：**
+
+在 `main.go` 中取消注释以下代码：
+```go
+if embedFn := newDemoEmbedFn(); embedFn != nil {
+    vecTool := tools.NewNovelVectorSearchTool(embedFn)
+    toolsList = append(toolsList, vecTool)
+}
+```
 
 ### 3. TODO / 后续扩展方向
 
@@ -87,8 +106,8 @@ Ark 会基于 `workflow/template.go` 中的 PromptTemplate、`graph/loop.go` 中
 - **反馈闭环 & 兴趣向量**
   - `workflow/feedback.go`：当前只是将反馈 append 到 `/tmp/novel_feedback.log`。  
     - TODO：改为写入数据库或消息队列，异步更新用户兴趣向量 / 召回库权重。
-  - `graph/loop.go`：在写完 feedback 后仅做了注释。  
-    - TODO：实现一个离线/定时任务消费这些反馈日志，根据点击/满意度等信号更新用户画像。
+  - `graph/loop.go`：当前反馈记录简化了候选列表（因为模型自动处理）。  
+    - TODO：从 Tool Calling 历史中提取候选列表，用于更完整的反馈记录。
 
 - **工程化 & 可配置**
   - `tool/vector_tool.go`：  

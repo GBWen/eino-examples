@@ -3,26 +3,52 @@ package graph
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
 
 	"github.com/cloudwego/eino/components/model"
-	einotool "github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/cloudwego/eino-examples/tomato_novel_recommand/flow"
-	tools "github.com/cloudwego/eino-examples/tomato_novel_recommand/tool"
 	"github.com/cloudwego/eino-examples/tomato_novel_recommand/workflow"
 )
 
-// RunInteractiveLoop is a demo agent loop:
-// read user preference -> build messages -> (optionally call tools) -> LLM stream -> maintain history.
-func RunInteractiveLoop(ctx context.Context, llm model.ToolCallingChatModel, vectorTool einotool.InvokableTool, keywordTool einotool.InvokableTool) {
+// RunInteractiveLoop uses ReAct Agent to let the model automatically decide which tools to call.
+// The model will:
+// 1. Decide if clarification is needed (via clarify_missing_info tool)
+// 2. Search for novels (via novel_search or novel_vector_search tool)
+// 3. Rerank and generate recommendations based on search results
+func RunInteractiveLoop(ctx context.Context, llm model.ToolCallingChatModel, toolsList []tool.BaseTool) {
 	reader := bufio.NewReader(os.Stdin)
 	var history []*schema.Message
+
+	// Create ReAct Agent with all available tools
+	// The model will automatically decide which tools to call
+	agent, err := react.NewAgent(ctx, &react.AgentConfig{
+		ToolCallingModel: llm,
+		ToolsConfig: compose.ToolsNodeConfig{
+			Tools: toolsList,
+		},
+		MaxStep: 10, // Limit max tool-calling steps to avoid infinite loops
+	})
+	if err != nil {
+		log.Fatalf("failed to create react agent: %v", err)
+	}
+
+	// System prompt: guide the model to use tools appropriately
+	systemPrompt := "你是一名中文网络小说平台的资深编辑，擅长根据用户的阅读喜好推荐中文网文。" +
+		"你可以使用以下工具：\n" +
+		"- clarify_missing_info: 当用户需求不够明确时，先询问补充信息\n" +
+		"- novel_search: 基于关键词/类型搜索小说（默认使用）\n" +
+		"- novel_vector_search: 基于语义向量搜索小说（可选，适合大规模书库）\n\n" +
+		"推荐流程：1) 如需要先澄清用户偏好 2) 调用搜索工具获取候选 3) 从候选中选择3-5本最匹配的，给出推荐理由。\n" +
+		"回答时使用自然、口语化的中文。"
 
 	for {
 		fmt.Print("请输入你当前想看的小说类型 / 心情 / 偏好（输入 exit 退出）：")
@@ -39,93 +65,48 @@ func RunInteractiveLoop(ctx context.Context, llm model.ToolCallingChatModel, vec
 			return
 		}
 
-		// Step 1: clarify missing key information if the query is too short.
-		preference := ensurePreference(ctx, text, reader)
+		// Build messages with system prompt and history
+		messages := []*schema.Message{
+			schema.SystemMessage(systemPrompt),
+		}
+		messages = append(messages, history...)
+		messages = append(messages, schema.UserMessage(text))
 
-		// Step 2: call vector-search / keyword-search tools to get candidate novels.
-		candidates := retrieveCandidates(ctx, vectorTool, keywordTool, preference)
-
-		// Step 3: build prompt with candidates and stream the final recommendation.
-		messages, err := workflow.CreateMessagesFromTemplate(preference, candidates, history)
+		// Let the agent automatically call tools and generate response
+		fmt.Printf("\n=== LLM recommendation result (streaming) ===\n")
+		sr, err := agent.Stream(ctx, messages)
 		if err != nil {
-			log.Fatalf("format template failed: %v", err)
+			log.Fatalf("agent stream failed: %v", err)
 		}
 
-		fmt.Printf("\n=== LLM recommendation result (streaming) ===\n")
-		sr := flow.Stream(ctx, llm, messages)
-		full := flow.ConsumeStream(sr, flow.StdoutWriter)
+		full := &schema.Message{
+			Role: schema.Assistant,
+		}
 
-		// Update history: user messages + assistant reply.
-		history = append(history, messages...)
+		// Consume stream and print
+		for {
+			msg, err := sr.Recv()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				log.Fatalf("stream recv failed: %v", err)
+			}
+			if msg != nil && msg.Content != "" {
+				fmt.Print(msg.Content)
+				full.Content += msg.Content
+			}
+		}
+		fmt.Println()
+
+		// Update history
+		history = append(history, schema.UserMessage(text))
 		history = append(history, full)
 
-		// Step 4: write feedback for later offline use (e.g. DB / vector store update).
-		// TODO: consume feedback logs to update user preference vectors or training data.
-		workflow.RecordFeedback("", preference, candidates, full.Content)
+		// Record feedback (simplified: we don't have candidates here since model handles it)
+		// TODO: extract candidates from tool calls in the future
+		workflow.RecordFeedback("", text, nil, full.Content)
 
 		fmt.Println("\n----------------------")
 	}
-}
-
-// ensurePreference uses the clarify tool to complete user preference if it's too vague.
-func ensurePreference(ctx context.Context, pref string, reader *bufio.Reader) string {
-	if len([]rune(pref)) >= 4 {
-		return pref
-	}
-	clarify := tools.NewClarifyTool()
-	question, err := clarify.InvokableRun(ctx, `{"question":"请补充你想看的题材/风格/关键词，例如：甜宠、系统、爽文、慢热、悬疑等"}`)
-	if err != nil {
-		log.Printf("clarify tool failed: %v", err)
-		return pref
-	}
-	fmt.Printf("信息不足，澄清问题：%s\n你的回答：", question)
-	resp, _ := reader.ReadString('\n')
-	resp = strings.TrimSpace(resp)
-	if resp == "" {
-		return pref
-	}
-	answer, err := clarify.InvokableRun(ctx, `{"question":"ok"}`, tools.WithUserResponse(resp))
-	if err != nil {
-		log.Printf("clarify tool failed: %v", err)
-		return resp
-	}
-	return answer
-}
-
-// retrieveCandidates calls the vector-search tool, and falls back to keyword-search tool on error or empty result.
-func retrieveCandidates(ctx context.Context, vectorTool einotool.InvokableTool, keywordTool einotool.InvokableTool, pref string) []*tools.Novel {
-	args, _ := json.Marshal(map[string]any{
-		"keyword": pref,
-		"top_n":   5,
-	})
-
-	// First try vector search.
-	if vectorTool != nil {
-		if res := invokeTool(ctx, vectorTool, args); len(res) > 0 {
-			return res
-		}
-		log.Printf("vector search fallback to keyword search")
-	}
-
-	// Fallback to keyword search.
-	if keywordTool != nil {
-		if res := invokeTool(ctx, keywordTool, args); len(res) > 0 {
-			return res
-		}
-	}
-	return nil
-}
-
-func invokeTool(ctx context.Context, t einotool.InvokableTool, args []byte) []*tools.Novel {
-	out, err := t.InvokableRun(ctx, string(args))
-	if err != nil {
-		log.Printf("invoke tool failed: %v", err)
-		return nil
-	}
-	var res tools.NovelSearchOutput
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
-		log.Printf("decode tool output failed: %v", err)
-		return nil
-	}
-	return res.Novels
 }
