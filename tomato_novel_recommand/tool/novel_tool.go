@@ -35,6 +35,11 @@ type NovelSearchOutput struct {
 	Novels []*Novel `json:"novels"`
 }
 
+// NovelResultSink can persist/search results into a backing store (e.g. Qdrant).
+type NovelResultSink interface {
+	StoreNovels(ctx context.Context, novels []*Novel) error
+}
+
 // NovelSearchParam is the internal parameter struct for API calls (kept for backwards compatibility).
 type NovelSearchParam struct {
 	Keyword string
@@ -45,6 +50,12 @@ type NovelSearchParam struct {
 // NewNovelSearchTool creates a NovelSearch tool.
 // It uses utils.InferTool to infer tool metadata from function signature and struct tags.
 func NewNovelSearchTool() einotool.InvokableTool {
+	return NewNovelSearchToolWithSink(nil)
+}
+
+// NewNovelSearchToolWithSink allows the caller to plug in a sink to persist every search result
+// (e.g. write into vector DB for later semantic search).
+func NewNovelSearchToolWithSink(sink NovelResultSink) einotool.InvokableTool {
 	novelSearchTool, err := utils.InferTool(
 		"novel_search",
 		"Search novels based on user-provided keyword or genre, and return suitable candidates.",
@@ -62,6 +73,13 @@ func NewNovelSearchTool() einotool.InvokableTool {
 			if err != nil {
 				log.Printf("[tool] novel_search failed, err=%v", err)
 				return nil, fmt.Errorf("call novel api failed: %w", err)
+			}
+
+			if sink != nil && len(novels) > 0 {
+				if err := sink.StoreNovels(ctx, novels); err != nil {
+					// Non-blocking persistence; log and continue.
+					log.Printf("[tool] persist novels to sink failed, err=%v", err)
+				}
 			}
 
 			out := &NovelSearchOutput{Novels: novels}

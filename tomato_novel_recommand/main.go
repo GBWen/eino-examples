@@ -47,22 +47,29 @@ func main() {
 
 	log.Printf("=== 正在创建 Ark Chat 模型 ===\n")
 	cm := flow.CreateArkChatModel(ctx)
+	var err error
+
+	// Embedding function for both vector sink (store) and vector/hybrid search.
+	embedFn, arkErr := tools.NewArkEmbedFuncFromEnv()
+	if arkErr != nil {
+		log.Fatalf("Ark embedding is required: %v", arkErr)
+	}
+	log.Printf("Ark embedding enabled via EMBED_API_KEY")
+	vectorSink := tools.NewQdrantVectorSink(embedFn)
 
 	// Prepare tools: keyword search (default) + clarify tool
 	toolsList := []einotool.BaseTool{
-		tools.NewNovelSearchTool(), // Keyword search: fast and suitable for medium-scale book library
-		tools.NewClarifyTool(),     // Clarification tool: ask user for more details when needed
+		tools.NewNovelSearchToolWithSink(vectorSink), // Keyword search + persist to vector DB
+		tools.NewNovelHybridSearchTool(embedFn),      // Hybrid: API + vector merge
+		tools.NewClarifyTool(),                       // Clarification tool: ask user for more details when needed
 	}
 
-	// TODO: add vector search tool for large-scale book library (millions of books)
-	// Uncomment the following to enable vector search:
-	/*
-		if embedFn := newDemoEmbedFn(); embedFn != nil {
-			vecTool := tools.NewNovelVectorSearchTool(embedFn)
-			toolsList = append(toolsList, vecTool)
-			log.Printf("Vector search tool enabled (for large-scale book library)\n")
-		}
-	*/
+	// Optional: keep pure vector search tool if you want the agent to choose it explicitly.
+	if embedFn != nil {
+		vecTool := tools.NewNovelVectorSearchTool(embedFn)
+		toolsList = append(toolsList, vecTool)
+		log.Printf("Vector search tool enabled (for large-scale book library)\n")
+	}
 
 	// Bind all tools to the model
 	// It will automatically decide which tool to use
@@ -74,7 +81,7 @@ func main() {
 		}
 		toolInfos = append(toolInfos, info)
 	}
-	cm, err := cm.WithTools(toolInfos)
+	cm, err = cm.WithTools(toolInfos)
 	if err != nil {
 		log.Fatalf("bind tools failed: %v", err)
 	}

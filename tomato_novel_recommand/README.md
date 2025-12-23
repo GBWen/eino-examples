@@ -4,16 +4,20 @@
 
 ### 架构设计
 
-**核心思路：关键词搜索 + LLM 精排**
+**核心思路：关键词搜索 + 向量检索（可选）+ LLM 精排**
 - 使用 **ReAct Agent** 让模型自动决定何时调用哪个 Tool
-- 默认使用 **关键词搜索**（适合中小规模书库，几千到几万本）
-- 预留 **向量检索** 作为可选扩展（适合大规模书库，百万级以上）
+- 默认使用 **关键词搜索**，同时把每次 API 结果落到向量库（Qdrant）
+- 内置 **混合检索**（关键词 API + 向量库合并去重），兼顾新鲜度与相关性
+- 也保留 **纯向量检索** 作为可选扩展（适合大规模书库，百万级以上）
 
 **工作流程：**
 1. 用户输入偏好 → ReAct Agent 接收
 2. 模型自动判断是否需要澄清（调用 `clarify_missing_info` Tool）
-3. 模型自动调用搜索工具（`novel_search` 或 `novel_vector_search`）
-4. 模型基于搜索结果精排，生成 3-5 本推荐并给出理由
+3. 模型自动调用搜索工具：
+   - `novel_hybrid_search`（默认优先）：API 关键词搜索 + 向量库语义搜索，合并去重
+   - `novel_search`：仅关键词 API
+   - `novel_vector_search`：仅向量库（可选）
+4. 模型基于候选精排，生成 3-5 本推荐并给出理由
 
 ### 目录结构
 
@@ -21,8 +25,10 @@
 - `flow/`：流程底座，Ark ChatModel 初始化、生成/流式封装
 - `workflow/`：反馈记录（可选，用于后续用户画像更新）
 - `tool/`：Tool 封装
-  - `novel_tool.go`：关键词搜索 Tool（默认使用）
+  - `novel_tool.go`：关键词搜索 Tool（默认，且将结果落库到向量 DB）
+  - `hybrid_tool.go`：混合检索（API + 向量库，合并去重）
   - `vector_tool.go`：向量检索 Tool（可选扩展，需 Qdrant + Embedding）
+  - `vector_sink.go`：向量落库封装（使用 Embed + Qdrant upsert）
   - `clarify_tool.go`：澄清工具
 - `graph/`：ReAct Agent 循环封装（CLI 交互）
 
@@ -84,21 +90,28 @@ ARK_API_KEY=xxx go run ./tomato_novel_recommand
 
 **启用向量检索（可选）：**
 
-在 `main.go` 中取消注释以下代码：
-```go
-if embedFn := newDemoEmbedFn(); embedFn != nil {
-    vecTool := tools.NewNovelVectorSearchTool(embedFn)
-    toolsList = append(toolsList, vecTool)
-}
-```
+`main.go` 默认启用了：
+- 关键词搜索（并写入向量库）
+- 混合检索（API + 向量）
+- 纯向量检索（可让 Agent 挑选使用）
+
+如需仅关闭纯向量检索，可在 `main.go` 去掉 `NewNovelVectorSearchTool` 的 append。
+
+#### Qdrant 配置
+- 启动本地 Qdrant（可用 `docker-compose.yml`）：`docker compose up -d qdrant`
+- 环境变量（有默认值，可不设）：
+  - `QDRANT_URL`（默认 `http://localhost:6333`）
+  - `QDRANT_COLLECTION`（默认 `novels`）
+
+#### Embedding
+- 必填：`EMBED_API_KEY`。默认使用模型 `doubao-embedding-vision-250615`，可用 `EMBED_MODEL` 覆盖；可设置 `EMBED_BASE_URL`。
+- 不再提供伪向量回退，未配置会直接退出，确保写入/查询维度与真实模型一致。
 
 ### 3. TODO / 后续扩展方向
 
 代码里已经标了一些关键 TODO，可以按需实现成你的业务版本：
 
 - **向量检索扩展（可选）**
-  - `tool/vector_tool.go`：`newQdrantClientFromEnv` 里默认 `http://localhost:6333`。  
-    - TODO：通过配置文件/启动参数管理 Qdrant endpoint 和 collection，而不是写死 localhost。
   - `main.go`：`newDemoEmbedFn` 只是一个伪向量生成。  
     - TODO：替换为真实 Embedding 服务（例如 Ark Embedding），并保证向量维度与 Qdrant collection 一致。
 
@@ -111,6 +124,7 @@ if embedFn := newDemoEmbedFn(); embedFn != nil {
 - **工程化 & 可配置**
   - `tool/vector_tool.go`：  
     - TODO：通过依赖注入传入 `qdrantClient` 和 `EmbedFunc`，方便单测和多环境配置。
+  - 配置抽象：通过配置文件/启动参数统一管理 Qdrant endpoint/collection（不写死 localhost），以及 Embedding 选择和凭据。
   - 可以进一步抽出配置结构体（如 `Config{ Ark, Qdrant, Embedding, FeedbackSink }`），统一管理所有外部依赖。
 
 

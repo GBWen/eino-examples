@@ -18,6 +18,7 @@ func GetSystemPrompt(ctx context.Context, toolsList []tool.BaseTool) string {
 	hasClarify := false
 	hasKeywordSearch := false
 	hasVectorSearch := false
+	hasHybrid := false
 
 	for _, t := range toolsList {
 		info, err := t.Info(ctx)
@@ -31,6 +32,9 @@ func GetSystemPrompt(ctx context.Context, toolsList []tool.BaseTool) string {
 		case "novel_search":
 			hasKeywordSearch = true
 			toolDescs = append(toolDescs, "- novel_search: 基于关键词/类型搜索小说")
+		case "novel_hybrid_search":
+			hasHybrid = true
+			toolDescs = append(toolDescs, "- novel_hybrid_search: 组合“API关键词搜索 + 向量库语义搜索”，去重合并后返回更匹配的候选")
 		case "novel_vector_search":
 			hasVectorSearch = true
 			toolDescs = append(toolDescs, "- novel_vector_search: 基于语义向量搜索小说（适合大规模书库）")
@@ -46,7 +50,9 @@ func GetSystemPrompt(ctx context.Context, toolsList []tool.BaseTool) string {
 	if hasClarify {
 		workflowSteps = append(workflowSteps, "1) **重要**：如果用户需求模糊（如只说'推荐'、'随便'、'好看的书'等），或缺少关键信息（题材、风格、关键词），必须先使用 clarify_missing_info 工具询问用户，获取明确偏好后再搜索")
 	}
-	if hasKeywordSearch || hasVectorSearch {
+	if hasHybrid {
+		workflowSteps = append(workflowSteps, "2) 在用户需求明确后，优先调用 hybrid（API+向量）获取更丰富候选；必要时可再调用纯关键词/向量补充")
+	} else if hasKeywordSearch || hasVectorSearch {
 		workflowSteps = append(workflowSteps, "2) 在用户需求明确后，调用搜索工具获取候选")
 	}
 	workflowSteps = append(workflowSteps, "3) 从候选中选择3-5本最匹配的，给出推荐理由，并在每本书后面给出可点击的阅读链接（如果工具返回了 link 字段）")
