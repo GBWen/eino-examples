@@ -151,41 +151,30 @@ func qdrantCreateCollection(baseURL, collection string, dim int) error {
 }
 
 // qdrantUpsert writes points using batch format (ids + vectors + payloads).
+// qdrantUpsert 写入 points，兼容最新 Qdrant HTTP API
 func qdrantUpsert(baseURL, collection string, points []map[string]interface{}) error {
-	ids := make([]any, 0, len(points))
-	vectors := make([][]float32, 0, len(points))
-	payloads := make([]map[string]interface{}, 0, len(points))
-
-	for _, p := range points {
-		id, _ := p["id"]
-		vec, _ := p["vector"].([]float32)
-		payload, _ := p["payload"].(map[string]interface{})
-		ids = append(ids, id)
-		vectors = append(vectors, vec)
-		payloads = append(payloads, payload)
-	}
-
 	body := map[string]interface{}{
-		"ids":      ids,
-		"vectors":  vectors,
-		"payloads": payloads,
+		"points": points, // points 每个元素都包含 "id", "vector", "payload"
 	}
-
 	b, _ := json.Marshal(body)
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/collections/%s/points", baseURL, collection), bytes.NewReader(b))
+
+	req, err := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/collections/%s/points", baseURL, collection), bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("upsert status %d, body=%s", resp.StatusCode, string(body))
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("upsert failed, status=%d, body=%s", resp.StatusCode, string(respBody))
 	}
+
 	return nil
 }
 
