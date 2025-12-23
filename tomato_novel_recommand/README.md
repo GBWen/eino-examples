@@ -4,11 +4,11 @@
 
 ### 目录结构
 
-- `main.go`：交互式 CLI 入口
+- `main.go`：交互式 CLI 入口（创建模型、绑定工具、启动 Agent 循环）
 - `flow/`：流程底座，Ark ChatModel 初始化、生成/流式封装
-- `workflow/`：PromptTemplate 与消息构造
-- `tool/`：NovelSearch Tool 封装与绑定
-- `graph/`：Agent Graph/循环模板（含 CLI 循环示例）
+- `workflow/`：PromptTemplate、候选拼接、用户反馈写回
+- `tool/`：小说检索相关 Tool 封装（关键词检索 + 向量检索 + 澄清工具等）
+- `graph/`：Agent Graph/循环模板（澄清 → 检索 → 精排生成 → 反馈）
 
 ### 0. 前置要求
 
@@ -44,42 +44,56 @@ ARK_API_KEY=xxx go run ./tomato_novel_recommand
 - `想看轻松搞笑一点的现代言情，最好是短篇的`
 - `最近有点压力大，想看治愈一点的日常文`
 
-Ark 会基于 `template.go` 中的 PromptTemplate 和历史对话，结合内部的推荐逻辑/Tool 结果，生成一段包含多本小说「标题 + 简短推荐语」的回复。
+Ark 会基于 `workflow/template.go` 中的 PromptTemplate、`graph/loop.go` 中的 Agent 流程，以及绑定的 Tool 结果，生成一段包含多本小说「标题 + 简短推荐语」的回复。
 
-### 2. NovelSearch Tool（novel_tool.go）
+### 2. 当前流程说明（Flow / Graph / Workflow / Tool）
 
-`novel_tool.go` 中的核心内容：
+整体分层与职责：
 
-- **数据结构**
-  - `Novel`：单本小说（标题、作者、分类、简介、链接）
-  - `NovelSearchParam`：搜索参数（`keyword` / `genre` / `top_n`）
-- **Tool 实现**
-  - `NovelSearchTool`：实现了 `Info` 和 `InvokableRun`，符合 Eino 的 `InvokableTool` 接口
-  - `InvokableRun`：
-    1. 解析大模型传入的 JSON 参数
-    2. 调用 `callTomatoAPI` 获取小说列表（当前为 mock，实际可接 HTTP / RPC）
-    3. 将结果序列化成 JSON 字符串返回给大模型
-- **绑定函数**
-  - `bindNovelSearchTool(ctx, cm)`：把 `NovelSearch` Tool 绑定到 Ark ChatModel 上，返回一个带 Tool 能力的新模型实例：
+- **Component 层（Tool / ChatModel / Embedding 等）**
+  - `tool/novel_tool.go`：`novel_search` 关键词检索 Tool（用于 fallback），内部目前用 `callTomatoAPI` 返回 mock 数据。
+  - `tool/vector_tool.go`：`novel_vector_search` 向量检索 Tool，基于 Qdrant + `EmbedFunc` 封装。
+  - `tool/clarify_tool.go`：`clarify_missing_info` 澄清 Tool，在信息不足时向用户追问。
+  - `flow/ark.go`：Ark ChatModel 初始化。
+  - `flow/generate.go`：封装普通/流式生成。
 
-```go
-cm := createArkChatModel(ctx)
-cm, novelTool := bindNovelSearchTool(ctx, cm)
-```
+- **Workflow Step 层**
+  - `workflow/template.go`：将「用户需求 + 检索候选 + 历史对话」拼成提示词，供 ChatModel 精排生成。
+  - `workflow/feedback.go`：将「用户输入 + 候选列表 + 模型回复」写入本地日志，作为后续更新兴趣向量/训练数据的入口。
 
-后续可以在 Graph / Agent 中，把 `novelTool` 放到 `compose.NewToolNode` 的 `Tools` 列表里，就能让 Ark 在 ReAct / Tool Call 流程中自动调用小说搜索能力。
+- **Graph 层**
+  - `graph/loop.go`：一个简单的 Agent 循环：
+    1. 读取用户输入；
+    2. `ensurePreference` 使用澄清 Tool 补齐关键信息；
+    3. `retrieveCandidates` 先走向量检索 Tool，失败或为空时回退到关键词检索 Tool；
+    4. 调用 `workflow.CreateMessagesFromTemplate` 将候选注入 prompt，流式输出推荐结果；
+    5. 调用 `workflow.RecordFeedback` 记录反馈。
 
-### 3. 如何改成你自己的业务
+- **Flow 层**
+  - `main.go`：组合上述组件，构造一个「澄清 → 检索 → 精排 → 反馈」的 ReAct 风格多轮推荐 Agent。
 
-1. **替换 Tool 实现**
-   - 修改 `callTomatoAPI`，接入你自己的番茄小说服务 / 书库 API
-   - 保持返回结构语义清晰（字段名尽量“可读”，便于大模型理解）
+### 3. TODO / 后续扩展方向
 
-2. **调整 PromptTemplate**
-   - 在 `template.go` 中修改系统提示和用户模板，使之更贴合你的推荐规则（比如增加标签、偏好、黑名单等）
+代码里已经标了一些关键 TODO，可以按需实现成你的业务版本：
 
-3. **扩展为 Agent / Flow**
-   - 如果你希望让模型自动决定「是否搜索」「搜索几次」「如何综合结果」，可以基于 `bindNovelSearchTool` 输出的模型，构建 ReAct Agent 或 Graph（参考仓库中的 `compose/graph/tool_call_agent` 等示例）。
+- **真实业务接入**
+  - `tool/novel_tool.go`：`callTomatoAPI` 目前是 mock 数据。  
+    - TODO：接入真实番茄小说或你自有书库的 HTTP/RPC API，替换硬编码结果。
+  - `tool/vector_tool.go`：`newQdrantClientFromEnv` 里默认 `http://localhost:6333`。  
+    - TODO：通过配置文件/启动参数管理 Qdrant endpoint 和 collection，而不是写死 localhost。
+  - `main.go`：`newDemoEmbedFn` 只是一个伪向量生成。  
+    - TODO：替换为真实 Embedding 服务（例如 Ark Embedding），并保证向量维度与 Qdrant collection 一致。
+
+- **反馈闭环 & 兴趣向量**
+  - `workflow/feedback.go`：当前只是将反馈 append 到 `/tmp/novel_feedback.log`。  
+    - TODO：改为写入数据库或消息队列，异步更新用户兴趣向量 / 召回库权重。
+  - `graph/loop.go`：在写完 feedback 后仅做了注释。  
+    - TODO：实现一个离线/定时任务消费这些反馈日志，根据点击/满意度等信号更新用户画像。
+
+- **工程化 & 可配置**
+  - `tool/vector_tool.go`：  
+    - TODO：通过依赖注入传入 `qdrantClient` 和 `EmbedFunc`，方便单测和多环境配置。
+  - 可以进一步抽出配置结构体（如 `Config{ Ark, Qdrant, Embedding, FeedbackSink }`），统一管理所有外部依赖。
 
 
 
