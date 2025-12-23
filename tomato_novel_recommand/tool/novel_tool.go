@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/cloudwego/eino/schema"
 )
 
 // Novel represents the key information of a single novel.
@@ -67,22 +65,6 @@ func NewNovelSearchTool() einotool.InvokableTool {
 		log.Fatalf("failed to create novel search tool: %v", err)
 	}
 	return novelSearchTool
-}
-
-// BindNovelSearchTool binds the NovelSearch tool to an Ark ChatModel and returns the new model instance.
-func BindNovelSearchTool(ctx context.Context, cm model.ToolCallingChatModel) (model.ToolCallingChatModel, einotool.BaseTool) {
-	novelTool := NewNovelSearchTool()
-
-	info, err := novelTool.Info(ctx)
-	if err != nil {
-		log.Fatalf("get novel tool info failed: %v", err)
-	}
-
-	newCM, err := cm.WithTools([]*schema.ToolInfo{info})
-	if err != nil {
-		log.Fatalf("bind tools failed: %v", err)
-	}
-	return newCM, novelTool
 }
 
 // callTomatoAPI wraps the tomato novel search backend.

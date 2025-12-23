@@ -10,10 +10,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/cloudwego/eino/schema"
 )
 
 // EmbedFunc abstracts a text-embedding function.
@@ -170,19 +168,4 @@ func NewNovelVectorSearchTool(embedFn EmbedFunc) einotool.InvokableTool {
 		log.Fatalf("failed to create novel_vector_search tool: %v", err)
 	}
 	return toolImpl
-}
-
-// BindNovelVectorSearchTool binds the vector-search tool to the chat model and returns the new model plus the tool.
-func BindNovelVectorSearchTool(ctx context.Context, cm model.ToolCallingChatModel, embedFn EmbedFunc) (model.ToolCallingChatModel, einotool.InvokableTool) {
-	vectorTool := NewNovelVectorSearchTool(embedFn)
-
-	info, err := vectorTool.Info(ctx)
-	if err != nil {
-		log.Fatalf("get vector tool info failed: %v", err)
-	}
-	newCM, err := cm.WithTools([]*schema.ToolInfo{info})
-	if err != nil {
-		log.Fatalf("bind vector tool failed: %v", err)
-	}
-	return newCM, vectorTool
 }
